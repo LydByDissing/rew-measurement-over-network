@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Exclude JavaFX start method parameter -->
+    <Match>
+        <Class name="com.lydbydissing.AudioBridgeMain"/>
+        <Method name="start"/>
+        <Bug pattern="UP_UNUSED_PARAMETER"/>
+    </Match>
+    
+    <!-- Allow TODO comments in development phase -->
+    <Match>
+        <Bug pattern="TODO"/>
+    </Match>
+    
+    <!-- Exclude test-related false positives -->
+    <Match>
+        <Class name="~.*Test.*"/>
+        <Bug pattern="URF_UNREAD_FIELD"/>
+    </Match>
+    <Match>
+        <Class name="~.*Test.*"/>
+        <Bug pattern="UWF_UNWRITTEN_FIELD"/>
+    </Match>
+</FindBugsFilter>
