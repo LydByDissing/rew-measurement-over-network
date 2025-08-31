@@ -7,9 +7,15 @@
     <property name="severity" value="error"/>
     <property name="fileExtensions" value="java, properties, xml"/>
     
-    <!-- Checks for whitespace -->
+    <!-- File-level checks -->
     <module name="FileTabCharacter">
         <property name="eachLine" value="true"/>
+    </module>
+    
+    <!-- Line Length (file-level check) -->
+    <module name="LineLength">
+        <property name="max" value="120"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://|ftp://"/>
     </module>
     
     <module name="TreeWalker">
@@ -31,9 +37,6 @@
         <module name="UnusedImports"/>
         
         <!-- Checks for Size Violations -->
-        <module name="LineLength">
-            <property name="max" value="120"/>
-        </module>
         <module name="MethodLength"/>
         <module name="ParameterNumber"/>
         

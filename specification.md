@@ -238,19 +238,24 @@ The system follows a distributed architecture optimized for measurement accuracy
 ### Development Environment
 
 #### Programming Languages
-- **Python**: 3.8+ (primary development language)
-- **Dependencies**:
-  - `requests` for REW API communication
-  - `websocket-client` for CamillaDSP control
-  - `pyyaml` for configuration management
-  - `numpy` for data processing
-  - `matplotlib` for visualization (optional)
+- **Java**: 21 LTS (current LTS as of 2025) for audio bridge application
+- **Python**: 3.8+ (Raspberry Pi components)
+- **Java Dependencies**:
+  - JavaFX 21.0.2 for GUI
+  - JmDNS 3.5.8 for service discovery
+  - Jackson 2.14.2 for JSON processing
+  - SLF4J + Logback for logging
+- **Python Dependencies**:
+  - `pyalsaaudio` for ALSA audio output
+  - `zeroconf` for mDNS service advertisement
+  - `pytest` for testing
 
 #### Development Tools
+- **Build System**: Maven 3.8+ for Java components
 - **Version Control**: Git 2.20+
-- **Documentation**: Markdown support
-- **Testing**: pytest for automated testing
-- **Packaging**: setuptools for Python package distribution
+- **Documentation**: Javadoc for Java, docstrings for Python
+- **Testing**: JUnit 5 for Java, pytest for Python
+- **Quality Tools**: SpotBugs, Checkstyle, JaCoCo for code quality
 
 ### Performance Targets
 

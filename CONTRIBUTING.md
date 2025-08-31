@@ -90,7 +90,7 @@ java-audio-bridge/
 ```
 
 #### Maven Build Requirements
-- **Java Version**: Target Java 11+ for broad compatibility
+- **Java Version**: Target Java 21 LTS (current LTS as of 2025)
 - **Artifact Naming**: Group ID: `com.lydbydissing`, Artifact ID: `audio-bridge`
 - **Executable JAR**: Use maven-shade-plugin for single JAR distribution
 - **Quality Plugins**: Include SpotBugs, Checkstyle, and JaCoCo for code quality

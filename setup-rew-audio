@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Quick setup script for REW audio loopback
+# This is a convenience wrapper around the main utility
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+LOOPBACK_SCRIPT="$SCRIPT_DIR/rew-loopback"
+
+if [ ! -f "$LOOPBACK_SCRIPT" ]; then
+    echo "Error: rew-loopback script not found at $LOOPBACK_SCRIPT"
+    exit 1
+fi
+
+case "${1:-setup}" in
+    "setup"|"start"|"on")
+        echo "🎵 Setting up REW virtual audio device..."
+        "$LOOPBACK_SCRIPT" create
+        ;;
+    "cleanup"|"stop"|"off")
+        echo "🔇 Cleaning up REW virtual audio device..."
+        "$LOOPBACK_SCRIPT" remove
+        ;;
+    "check"|"status")
+        "$LOOPBACK_SCRIPT" status
+        ;;
+    "restart"|"reset")
+        "$LOOPBACK_SCRIPT" restart
+        ;;
+    *)
+        echo "REW Audio Setup - Quick Commands"
+        echo "================================"
+        echo "Usage: $0 [command]"
+        echo ""
+        echo "Quick Commands:"
+        echo "  setup     Create REW virtual audio device (default)"
+        echo "  cleanup   Remove REW virtual audio device" 
+        echo "  check     Show device status"
+        echo "  restart   Restart the virtual device"
+        echo ""
+        echo "Full utility: $LOOPBACK_SCRIPT"
+        echo ""
+        echo "For detailed help: $LOOPBACK_SCRIPT help"
+        ;;
+esac

@@ -1,0 +1,357 @@
+#!/bin/bash
+
+# REW PulseAudio Loopback Device Manager
+# Creates and manages virtual audio devices for REW measurements
+
+set -e
+
+# Configuration
+DEVICE_NAME="REW_Network_Bridge"
+DEVICE_DESCRIPTION="REW Network Audio Bridge"
+CONFIG_FILE="$HOME/.rew-loopback"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Logging function
+log() {
+    echo -e "${BLUE}[REW-Loopback]${NC} $1"
+}
+
+error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Check if PulseAudio is available
+check_pulseaudio() {
+    if ! command -v pactl &> /dev/null; then
+        error "pactl command not found. Please install PulseAudio."
+        exit 1
+    fi
+    
+    if ! pactl info &> /dev/null; then
+        error "PulseAudio server is not running."
+        exit 1
+    fi
+}
+
+# Get module IDs from config file
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+    fi
+}
+
+# Save module IDs to config file
+save_config() {
+    cat > "$CONFIG_FILE" << EOF
+# REW Loopback Device Configuration
+# Generated automatically - do not edit manually
+SINK_MODULE_ID="$SINK_MODULE_ID"
+LOOPBACK_MODULE_ID="$LOOPBACK_MODULE_ID"
+EOF
+}
+
+# Remove config file
+remove_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        rm "$CONFIG_FILE"
+    fi
+}
+
+# Check if device exists
+device_exists() {
+    pactl list short sinks | grep -q "$DEVICE_NAME"
+}
+
+# Get device status
+get_device_status() {
+    if device_exists; then
+        local status=$(pactl list short sinks | grep "$DEVICE_NAME" | awk '{print $NF}')
+        case "$status" in
+            "RUNNING") echo "ACTIVE" ;;
+            "IDLE") echo "READY" ;;
+            *) echo "UNKNOWN ($status)" ;;
+        esac
+    else
+        echo "NOT_FOUND"
+    fi
+}
+
+# Create the virtual device
+create_device() {
+    log "Creating REW virtual audio device..."
+    
+    # Step 1: Create null-sink (this is what REW outputs to)
+    log "Creating null-sink: $DEVICE_NAME"
+    SINK_MODULE_ID=$(pactl load-module module-null-sink \
+        sink_name="$DEVICE_NAME")
+    
+    if [ -z "$SINK_MODULE_ID" ]; then
+        error "Failed to create null-sink"
+        exit 1
+    fi
+    
+    log "Created null-sink with module ID: $SINK_MODULE_ID"
+    
+    # Step 2: Create loopback so user hears audio through speakers
+    log "Creating speaker loopback"
+    LOOPBACK_MODULE_ID=$(pactl load-module module-loopback \
+        source="$DEVICE_NAME.monitor" \
+        sink="@DEFAULT_SINK@" \
+        latency_msec=20)
+    
+    if [ -z "$LOOPBACK_MODULE_ID" ]; then
+        error "Failed to create speaker loopback"
+        # Clean up null-sink
+        pactl unload-module "$SINK_MODULE_ID" 2>/dev/null || true
+        exit 1
+    fi
+    
+    log "Created loopback with module ID: $LOOPBACK_MODULE_ID"
+    
+    # Step 3: Save configuration
+    save_config
+    
+    success "REW virtual audio device created successfully!"
+    echo
+    echo "📋 SETUP INSTRUCTIONS:"
+    echo "1. In REW, go to Preferences > Soundcard"
+    echo "2. Set Output Device to: '$DEVICE_DESCRIPTION'"
+    echo "3. Audio will play through your speakers AND be available for capture"
+    echo
+    echo "💡 Device name: $DEVICE_NAME"
+    echo "💡 Monitor source: $DEVICE_NAME.monitor"
+}
+
+# Remove the virtual device
+remove_device() {
+    log "Removing REW virtual audio device..."
+    
+    load_config
+    
+    local removed_something=false
+    
+    # Remove loopback first
+    if [ -n "$LOOPBACK_MODULE_ID" ]; then
+        if pactl unload-module "$LOOPBACK_MODULE_ID" 2>/dev/null; then
+            log "Removed loopback module: $LOOPBACK_MODULE_ID"
+            removed_something=true
+        else
+            warning "Could not remove loopback module: $LOOPBACK_MODULE_ID"
+        fi
+    fi
+    
+    # Remove null-sink
+    if [ -n "$SINK_MODULE_ID" ]; then
+        if pactl unload-module "$SINK_MODULE_ID" 2>/dev/null; then
+            log "Removed null-sink module: $SINK_MODULE_ID"
+            removed_something=true
+        else
+            warning "Could not remove null-sink module: $SINK_MODULE_ID"
+        fi
+    fi
+    
+    # Try alternative removal if config method failed
+    if ! $removed_something; then
+        warning "Config-based removal failed, trying alternative method..."
+        
+        # Find and remove any modules for our device
+        local modules=$(pactl list short modules | grep "$DEVICE_NAME" | awk '{print $1}' | tac)
+        
+        if [ -n "$modules" ]; then
+            for module_id in $modules; do
+                if pactl unload-module "$module_id" 2>/dev/null; then
+                    log "Removed module: $module_id"
+                    removed_something=true
+                fi
+            done
+        fi
+    fi
+    
+    # Clean up config
+    remove_config
+    
+    if $removed_something; then
+        success "REW virtual audio device removed successfully!"
+    else
+        warning "No REW virtual audio device found to remove."
+    fi
+}
+
+# Show device status
+show_status() {
+    local status=$(get_device_status)
+    
+    echo "REW Virtual Audio Device Status"
+    echo "================================"
+    echo "Device Name: $DEVICE_NAME"
+    echo "Description: $DEVICE_DESCRIPTION"
+    echo -n "Status: "
+    
+    case "$status" in
+        "ACTIVE")
+            echo -e "${GREEN}ACTIVE${NC} (audio is flowing)"
+            ;;
+        "READY")
+            echo -e "${YELLOW}READY${NC} (device created, no audio)"
+            ;;
+        "NOT_FOUND")
+            echo -e "${RED}NOT FOUND${NC} (device not created)"
+            ;;
+        *)
+            echo -e "${RED}UNKNOWN${NC} ($status)"
+            ;;
+    esac
+    
+    echo
+    
+    if [ "$status" != "NOT_FOUND" ]; then
+        echo "Available in these applications:"
+        echo "• REW (Room EQ Wizard)"
+        echo "• System sound settings"
+        echo "• All audio applications"
+        echo
+        echo "Monitor source: $DEVICE_NAME.monitor"
+        echo "(Use this for capturing/recording REW output)"
+    else
+        echo "Run '$0 create' to create the virtual device."
+    fi
+    
+    echo
+    
+    # Show config info if available
+    load_config
+    if [ -n "$SINK_MODULE_ID" ] || [ -n "$LOOPBACK_MODULE_ID" ]; then
+        echo "Module Information:"
+        [ -n "$SINK_MODULE_ID" ] && echo "• Sink Module ID: $SINK_MODULE_ID"
+        [ -n "$LOOPBACK_MODULE_ID" ] && echo "• Loopback Module ID: $LOOPBACK_MODULE_ID"
+        echo "• Config file: $CONFIG_FILE"
+    fi
+}
+
+# List all audio devices
+list_devices() {
+    echo "All Audio Output Devices"
+    echo "========================"
+    pactl list short sinks | while read -r line; do
+        local id=$(echo "$line" | awk '{print $1}')
+        local name=$(echo "$line" | awk '{print $2}')
+        local status=$(echo "$line" | awk '{print $5}')
+        
+        if [ "$name" = "$DEVICE_NAME" ]; then
+            echo -e "${GREEN}[$id]${NC} $name ${YELLOW}(REW Virtual Device)${NC} - $status"
+        else
+            echo "[$id] $name - $status"
+        fi
+    done
+    
+    echo
+    echo "All Audio Input Sources"
+    echo "======================="
+    pactl list short sources | while read -r line; do
+        local id=$(echo "$line" | awk '{print $1}')
+        local name=$(echo "$line" | awk '{print $2}')
+        local status=$(echo "$line" | awk '{print $5}')
+        
+        if [[ "$name" == *"$DEVICE_NAME.monitor"* ]]; then
+            echo -e "${GREEN}[$id]${NC} $name ${YELLOW}(REW Monitor)${NC} - $status"
+        else
+            echo "[$id] $name - $status"
+        fi
+    done
+}
+
+# Show usage information
+show_usage() {
+    cat << EOF
+REW PulseAudio Loopback Device Manager
+
+Usage: $0 <command>
+
+Commands:
+    create      Create REW virtual audio device
+    remove      Remove REW virtual audio device  
+    status      Show device status
+    list        List all audio devices
+    restart     Remove and recreate device
+    help        Show this help message
+
+Examples:
+    $0 create    # Create the virtual device for REW
+    $0 status    # Check if device is active
+    $0 remove    # Clean up when done
+
+The virtual device '$DEVICE_NAME' will appear in:
+• REW's output device selection
+• System audio settings
+• All audio applications
+
+Audio sent to this device will:
+• Play through your normal speakers
+• Be available for capture/streaming
+• Work with REW measurements
+EOF
+}
+
+# Main script logic
+main() {
+    case "${1:-}" in
+        "create")
+            check_pulseaudio
+            if device_exists; then
+                warning "REW virtual device already exists!"
+                show_status
+                exit 1
+            fi
+            create_device
+            ;;
+        "remove"|"delete"|"cleanup")
+            check_pulseaudio
+            remove_device
+            ;;
+        "status")
+            check_pulseaudio
+            show_status
+            ;;
+        "list"|"ls")
+            check_pulseaudio
+            list_devices
+            ;;
+        "restart"|"recreate")
+            check_pulseaudio
+            log "Restarting REW virtual device..."
+            remove_device
+            sleep 1
+            create_device
+            ;;
+        "help"|"-h"|"--help")
+            show_usage
+            ;;
+        "")
+            show_usage
+            exit 1
+            ;;
+        *)
+            error "Unknown command: $1"
+            echo
+            show_usage
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function with all arguments
+main "$@"

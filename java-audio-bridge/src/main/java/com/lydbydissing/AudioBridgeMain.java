@@ -1,5 +1,8 @@
 package com.lydbydissing;
 
+import com.lydbydissing.cli.CliOptions;
+import com.lydbydissing.cli.HeadlessRunner;
+import com.lydbydissing.gui.MainController;
 import javafx.application.Application;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
@@ -13,7 +16,11 @@ import org.slf4j.LoggerFactory;
  * audio streaming via RTP/UDP and provides a GUI for device discovery and connection
  * management.</p>
  * 
- * <p>Usage: java -jar rew-network-bridge.jar</p>
+ * <p>Usage:</p>
+ * <ul>
+ *   <li>GUI Mode: java -jar rew-network-bridge.jar</li>
+ *   <li>Headless: java -jar rew-network-bridge.jar --headless --target 192.168.1.100</li>
+ * </ul>
  * 
  * @author REW Network Project Contributors
  * @version 0.1.0
@@ -22,15 +29,66 @@ import org.slf4j.LoggerFactory;
 public class AudioBridgeMain extends Application {
     
     private static final Logger logger = LoggerFactory.getLogger(AudioBridgeMain.class);
+    private static CliOptions cliOptions;
+    private MainController mainController;
     
     /**
      * Application entry point.
      * 
-     * @param args command line arguments (currently unused)
+     * @param args command line arguments
      */
     public static void main(String[] args) {
         logger.info("Starting REW Network Audio Bridge v{}", getVersion());
-        launch(args);
+        
+        try {
+            // Parse CLI arguments
+            cliOptions = CliOptions.parse(args);
+            logger.debug("CLI options: {}", cliOptions);
+            
+            // Handle special options first
+            if (cliOptions.isShowHelp()) {
+                CliOptions.printUsage();
+                return;
+            }
+            
+            if (cliOptions.isShowVersion()) {
+                CliOptions.printVersion();
+                return;
+            }
+            
+            // Run in headless mode if requested
+            if (cliOptions.isHeadless()) {
+                runHeadless();
+                return;
+            }
+            
+            // Otherwise run GUI mode
+            launch(args);
+            
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e.getMessage());
+            System.err.println();
+            CliOptions.printUsage();
+            System.exit(1);
+        } catch (Exception e) {
+            logger.error("Fatal error during startup", e);
+            System.err.println("Fatal error: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+    
+    /**
+     * Runs the application in headless mode.
+     */
+    private static void runHeadless() {
+        try {
+            HeadlessRunner runner = new HeadlessRunner(cliOptions);
+            runner.run();
+        } catch (Exception e) {
+            logger.error("Error in headless mode", e);
+            System.err.println("Headless mode error: " + e.getMessage());
+            System.exit(1);
+        }
     }
     
     /**
@@ -44,14 +102,40 @@ public class AudioBridgeMain extends Application {
     public void start(Stage primaryStage) throws Exception {
         logger.info("Initializing JavaFX application");
         
-        // TODO: Initialize GUI components
-        // TODO: Start Pi discovery service
-        // TODO: Initialize audio system
-        
-        primaryStage.setTitle("REW Network Audio Bridge");
-        primaryStage.show();
-        
-        logger.info("Application started successfully");
+        try {
+            // Load FXML
+            javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(
+                getClass().getResource("/main.fxml")
+            );
+            javafx.scene.Parent root = loader.load();
+            
+            // Get the controller for cleanup purposes
+            mainController = loader.getController();
+            
+            // Pass CLI options to controller if available
+            if (cliOptions != null && cliOptions.getTargetIp() != null) {
+                mainController.setAutoConnectTarget(cliOptions.getTargetIp(), cliOptions.getTargetPort());
+            }
+            
+            // Create scene
+            javafx.scene.Scene scene = new javafx.scene.Scene(root, 800, 600);
+            
+            // Setup stage
+            primaryStage.setTitle("REW Network Audio Bridge - LydByDissing");
+            primaryStage.setScene(scene);
+            primaryStage.setMinWidth(600);
+            primaryStage.setMinHeight(400);
+            
+            // TODO: Start Pi discovery service
+            // TODO: Initialize audio system
+            
+            primaryStage.show();
+            logger.info("Application started successfully");
+            
+        } catch (Exception e) {
+            logger.error("Failed to start application", e);
+            throw e;
+        }
     }
     
     /**
@@ -63,6 +147,11 @@ public class AudioBridgeMain extends Application {
     @Override
     public void stop() throws Exception {
         logger.info("Shutting down REW Network Audio Bridge");
+        
+        // Cleanup controller resources (including discovery service)
+        if (mainController != null) {
+            mainController.cleanup();
+        }
         
         // TODO: Cleanup network connections
         // TODO: Stop audio streaming

@@ -79,3 +79,7 @@ config/secrets.yaml
 *.pem
 
 IMPLEMENTATION_PLAN.md
+
+# Java
+
+**/target
