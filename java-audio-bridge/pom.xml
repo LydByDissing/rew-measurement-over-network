@@ -34,7 +34,7 @@
         <junit.version>5.9.2</junit.version>
         <mockito.version>5.1.1</mockito.version>
         <assertj.version>3.24.2</assertj.version>
-        <testfx.version>4.0.16-alpha</testfx.version>
+        <testfx.version>4.0.18</testfx.version>
         <openjfx.version>21.0.4</openjfx.version>
         <javafx-maven-plugin.version>0.0.8</javafx-maven-plugin.version>
         
@@ -113,6 +113,8 @@
             <version>${assertj.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- TestFX dependencies commented out due to headless compatibility issues -->
+        <!-- 
         <dependency>
             <groupId>org.testfx</groupId>
             <artifactId>testfx-core</artifactId>
@@ -125,32 +127,22 @@
             <version>${testfx.version}</version>
             <scope>test</scope>
         </dependency>
+        -->
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-swing</artifactId>
             <version>${openjfx.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- TestFX Monocle for headless testing (commented out due to compatibility issues) -->
+        <!-- 
         <dependency>
             <groupId>org.testfx</groupId>
             <artifactId>openjfx-monocle</artifactId>
             <version>jdk-12.0.1+2</version>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.openjfx</groupId>
-                    <artifactId>javafx-base</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.openjfx</groupId>
-                    <artifactId>javafx-graphics</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.openjfx</groupId>
-                    <artifactId>javafx-controls</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
+        -->
     </dependencies>
     
     <!-- Build Configuration -->
