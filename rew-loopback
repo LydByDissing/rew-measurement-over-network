@@ -73,7 +73,30 @@ remove_config() {
 
 # Check if device exists
 device_exists() {
-    pactl list short sinks | grep -q "$DEVICE_NAME"
+    # Check if sink exists
+    if pactl list short sinks | grep -q "^[0-9]*[[:space:]]*$DEVICE_NAME[[:space:]]"; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if REW devices exist more thoroughly
+rew_devices_exist() {
+    # Check for any sinks with REW in the name (case insensitive)
+    if pactl list short sinks | grep -i "rew" > /dev/null 2>&1; then
+        return 0
+    fi
+    
+    # Check config file for existing modules
+    load_config
+    if [ -n "$SINK_MODULE_ID" ] || [ -n "$LOOPBACK_MODULE_ID" ]; then
+        # Verify the modules still exist
+        if pactl list short modules | grep -E "^$SINK_MODULE_ID[[:space:]]|^$LOOPBACK_MODULE_ID[[:space:]]" > /dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    
+    return 1
 }
 
 # Get device status
@@ -96,8 +119,7 @@ create_device() {
     
     # Step 1: Create null-sink (this is what REW outputs to)
     log "Creating null-sink: $DEVICE_NAME"
-    SINK_MODULE_ID=$(pactl load-module module-null-sink \
-        sink_name="$DEVICE_NAME")
+    SINK_MODULE_ID=$(pactl load-module module-null-sink sink_name="$DEVICE_NAME")
     
     if [ -z "$SINK_MODULE_ID" ]; then
         error "Failed to create null-sink"
@@ -106,9 +128,27 @@ create_device() {
     
     log "Created null-sink with module ID: $SINK_MODULE_ID"
     
-    # Step 1.5: Set a user-friendly description
-    log "Setting device description"
-    pacmd update-sink-proplist "$DEVICE_NAME" 'device.description="'"$DEVICE_DESCRIPTION"'"' &>/dev/null || true
+    # Step 1.5: Set the device description
+    log "Setting device description: $DEVICE_DESCRIPTION"
+    # Try pactl first, then fall back to pacmd
+    if ! pactl set-sink-property "$DEVICE_NAME" device.description "\"$DEVICE_DESCRIPTION\"" 2>/dev/null; then
+        if ! pacmd update-sink-proplist "$DEVICE_NAME" 'device.description="'"$DEVICE_DESCRIPTION"'"' &>/dev/null; then
+            warning "Could not set device description (non-critical)"
+        else
+            log "Device description set via pacmd"
+        fi
+    else
+        log "Device description set via pactl"
+    fi
+    
+    # Verify the device was created with correct name
+    if ! pactl list short sinks | grep -q "$DEVICE_NAME"; then
+        error "Device creation verification failed - sink not found"
+        pactl unload-module "$SINK_MODULE_ID" 2>/dev/null || true
+        exit 1
+    fi
+    
+    log "Verified device creation: $DEVICE_NAME"
     
     # Step 2: Create loopback so user hears audio through speakers
     log "Creating speaker loopback"
@@ -439,9 +479,29 @@ main() {
         "create")
             check_pulseaudio
             if device_exists; then
-                warning "REW virtual device already exists!"
+                warning "REW virtual device '$DEVICE_NAME' already exists!"
+                echo
                 show_status
-                exit 1
+                exit 0
+            elif rew_devices_exist; then
+                warning "Other REW devices detected in the system!"
+                echo "Existing REW devices found:"
+                pactl list short sinks | grep -i "rew" | while read -r line; do
+                    local sink_name=$(echo "$line" | awk '{print $2}')
+                    echo "  • $sink_name"
+                done
+                echo
+                echo "Options:"
+                echo "  1. Run '$0 cleanup' to remove all REW devices first"
+                echo "  2. Run '$0 remove' to remove the configured device"
+                echo "  3. Continue anyway (may cause conflicts)"
+                echo
+                read -p "Continue with creation anyway? [y/N]: " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    log "Device creation cancelled by user"
+                    exit 0
+                fi
             fi
             create_device
             ;;
