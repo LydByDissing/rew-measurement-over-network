@@ -1,0 +1,57 @@
+# Dockerfile for Java Audio Bridge Test Container
+FROM openjdk:21-jdk-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    pulseaudio \
+    pulseaudio-utils \
+    alsa-utils \
+    maven \
+    netcat-traditional \
+    iputils-ping \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up PulseAudio for container use
+RUN mkdir -p /run/pulse && \
+    chmod 755 /run/pulse
+
+# Create app directory
+WORKDIR /app
+
+# Copy the Java project
+COPY java-audio-bridge/ /app/
+COPY rew-loopback /app/rew-loopback
+COPY setup-rew-audio /app/setup-rew-audio
+
+# Build the application
+RUN mvn clean package -DskipTests
+
+# Create audio bridge JAR symlink for easy access
+RUN ln -sf /app/target/audio-bridge-*.jar /app/audio-bridge.jar
+
+# Create test script
+COPY <<EOF /app/test-bridge.sh
+#!/bin/bash
+set -e
+
+echo "🧪 Testing Java Audio Bridge in Container"
+echo "Container IP: \$(hostname -I | awk '{print \$1}')"
+
+# Test basic functionality
+echo "✅ Testing JAR file existence"
+ls -la /app/audio-bridge.jar
+
+echo "✅ Testing Java Audio Bridge help"
+timeout 10 java -jar /app/audio-bridge.jar --help || true
+
+echo "✅ Java Audio Bridge container test completed"
+EOF
+
+RUN chmod +x /app/test-bridge.sh
+
+# Expose ports
+EXPOSE 8080 5005/udp
+
+# Default command
+CMD ["java", "-jar", "/app/audio-bridge.jar", "--headless"]

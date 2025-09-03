@@ -1,0 +1,135 @@
+# Docker Compose configuration for REW Pi Audio Receiver
+# Optimized for Raspberry Pi deployment with audio support
+
+services:
+  rew-pi-receiver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.12"
+    image: rew-pi-receiver:latest
+    container_name: rew-pi-audio-receiver
+    hostname: ${PI_HOSTNAME:-rew-pi}
+    
+    # Network configuration
+    network_mode: host  # Use host networking for mDNS discovery
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      # Audio configuration
+      - AUDIO_DEVICE=${AUDIO_DEVICE:-default}
+      - RTP_PORT=${RTP_PORT:-5004}
+      - HTTP_PORT=${HTTP_PORT:-8080}
+      
+      # Logging configuration
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      
+      # Container identification
+      - PI_HOSTNAME=${PI_HOSTNAME:-rew-pi}
+      - CONTAINER_VERSION=${VERSION:-latest}
+    
+    # Volume mounts
+    volumes:
+      # Audio device access
+      - /dev/snd:/dev/snd
+      - /run/pulse:/run/pulse:ro
+      - /var/run/pulse:/var/run/pulse:ro
+      
+      # Configuration and logs
+      - ./config:/app/config:ro
+      - ./logs:/var/log/rew
+      - ./audio-output:/tmp/audio
+      
+      # System integration
+      - /etc/hostname:/etc/hostname:ro
+      - /etc/hosts:/etc/hosts:ro
+    
+    # Device access for audio
+    devices:
+      - /dev/snd
+    
+    # Capabilities and privileges
+    cap_add:
+      - DAC_OVERRIDE  # Audio device access
+      - SETGID        # Group management
+      - SETUID        # User management
+    
+    # Group access for audio
+    group_add:
+      - audio
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits (important for Raspberry Pi)
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 256M
+#          cpus: '1.0'
+#        reservations:
+#          memory: 64M
+#          cpus: '0.2'
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Command override (can be customized via .env file)
+    command: ${RECEIVER_ARGS:---device default --rtp-port 5004 --http-port 8080 --verbose}
+
+# Optional: Additional services for monitoring/debugging
+  # Pi system monitor (optional)
+  system-monitor:
+    image: prom/node-exporter:latest
+    container_name: rew-pi-monitor
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--web.listen-address=:9100'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: '0.1'
+    profiles:
+      - monitoring
+
+# Named volumes for persistence
+volumes:
+  rew-config:
+    driver: local
+  rew-logs:
+    driver: local
+  rew-audio:
+    driver: local
+
+# Network configuration (optional - using host networking)
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -54,7 +54,10 @@ class AudioReceiver:
             "packets_received": 0,
             "bytes_received": 0,
             "errors": 0,
-            "last_sequence": -1
+            "last_sequence": -1,
+            "connection_errors": 0,
+            "last_packet_time": 0,
+            "stream_start_time": 0
         }
         
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -82,6 +85,14 @@ class AudioReceiver:
             self.pcm.setperiodsize(1024)
             
             self.running = True
+            self.stats["stream_start_time"] = int(time.time())
+            
+            print("🎵 Pi Audio Receiver Started!")
+            print("   Port: {}".format(self.port))
+            print("   Device: '{}'".format(self.device))
+            print("   Format: 48kHz, 16-bit, stereo")
+            print("   Waiting for RTP audio packets...")
+            
             self.logger.info("Audio receiver started on port {}, device '{}'".format(self.port, self.device))
             return True
             
@@ -109,11 +120,15 @@ class AudioReceiver:
             return
             
         self.logger.info("Waiting for RTP audio packets...")
+        packet_count = 0
+        last_status_time = time.time()
         
         try:
             while self.running:
                 try:
                     data, addr = self.socket.recvfrom(1500)  # Max RTP packet size
+                    current_time = time.time()
+                    self.stats["last_packet_time"] = int(current_time)
                     
                     if len(data) < 12:  # Minimum RTP header size
                         continue
@@ -143,6 +158,7 @@ class AudioReceiver:
                     # Update statistics
                     self.stats["packets_received"] += 1
                     self.stats["bytes_received"] += len(data)
+                    packet_count += 1
                     
                     # Check for dropped packets
                     if self.stats["last_sequence"] != -1:
@@ -150,14 +166,28 @@ class AudioReceiver:
                         if sequence != expected:
                             dropped = (sequence - expected) & 0xFFFF
                             self.stats["errors"] += dropped
+                            print("⚠️  Dropped {} packets (seq {}->{}), total errors: {}".format(
+                                dropped, expected, sequence, self.stats["errors"]))
                             self.logger.warning("Dropped {} packets (seq {}->{})".format(dropped, expected, sequence))
                     
                     self.stats["last_sequence"] = sequence
                     
+                    # Periodic status reporting (every 1000 packets)
+                    if packet_count > 0 and packet_count % 1000 == 0:
+                        duration = current_time - last_status_time
+                        if duration > 0:
+                            bitrate = (self.stats["bytes_received"] * 8.0) / duration
+                            connection_status = self.get_connection_status()
+                            print("📊 Pi Receiver: {} pkts, {:.1f} kbps, status: {}".format(
+                                self.stats["packets_received"], bitrate / 1000, connection_status))
+                    
                 except socket.timeout:
                     # Normal timeout - check if we should continue
+                    self.check_connection_health()
                     continue
                 except Exception as e:
+                    self.stats["connection_errors"] += 1
+                    print("❌ Pi Receiver error #{}: {}".format(self.stats["connection_errors"], e))
                     self.logger.error("Error receiving audio: {}".format(e))
                     self.stats["errors"] += 1
                     
@@ -165,6 +195,56 @@ class AudioReceiver:
             self.logger.info("Received interrupt signal")
         finally:
             self.stop()
+    
+    def get_connection_status(self):
+        """Get the current connection status."""
+        if not self.running:
+            return "STOPPED"
+        
+        current_time = int(time.time())
+        last_packet_time = self.stats.get("last_packet_time", 0)
+        
+        if last_packet_time == 0:
+            return "WAITING"
+        
+        time_since_last = current_time - last_packet_time
+        
+        if time_since_last < 2:
+            return "GOOD"
+        elif time_since_last < 10:
+            return "SLOW"
+        else:
+            return "DISCONNECTED"
+    
+    def check_connection_health(self):
+        """Check connection health and log warnings if needed."""
+        if not self.running:
+            return
+        
+        current_time = int(time.time())
+        last_packet_time = self.stats.get("last_packet_time", 0)
+        stream_start_time = self.stats.get("stream_start_time", current_time)
+        
+        # Only check if we've been running for at least 10 seconds
+        if current_time - stream_start_time < 10:
+            return
+        
+        time_since_last = current_time - last_packet_time
+        
+        if time_since_last > 15:  # 15 seconds without packets
+            print("⚠️  Pi Receiver: No data received for {} seconds".format(time_since_last))
+            self.logger.warning("No data received for {} seconds".format(time_since_last))
+        
+        # Check error rate
+        total_packets = self.stats["packets_received"]
+        total_errors = self.stats["errors"]
+        
+        if total_packets > 100 and total_errors > total_packets * 0.05:  # More than 5% error rate
+            error_percent = (total_errors * 100.0) / total_packets
+            print("⚠️  Pi Receiver: High error rate: {:.1f}% ({}/{} packets)".format(
+                error_percent, total_errors, total_packets))
+            self.logger.warning("High error rate: {:.1f}% ({}/{})".format(
+                error_percent, total_errors, total_packets))
 
 
 class StatusHandler(BaseHTTPRequestHandler):
@@ -191,6 +271,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "running": self.server.audio_receiver.running,
             },
             "stats": self.server.audio_receiver.stats.copy(),
+            "connection_status": self.server.audio_receiver.get_connection_status(),
             "timestamp": int(time.time())
         }
         
@@ -236,6 +317,11 @@ class REWAudioService:
     
     def start(self):
         """Start all service components."""
+        print("🚀 Starting REW Pi Audio Service...")
+        print("   Audio device: {}".format(self.audio_device))
+        print("   RTP port: {}".format(self.rtp_port))
+        print("   HTTP status port: {}".format(self.http_port))
+        
         self.logger.info("Starting REW Audio Service...")
         
         # Start HTTP status server
@@ -279,13 +365,16 @@ class REWAudioService:
             
             # Register service
             self.zeroconf.register_service(self.service_info)
+            print("📡 mDNS service registered: {}".format(service_name))
             self.logger.info("mDNS service registered: {}".format(service_name))
             
         except Exception as e:
+            print("❌ Failed to start mDNS service: {}".format(e))
             self.logger.error("Failed to start mDNS service: {}".format(e))
     
     def stop(self):
         """Stop all service components."""
+        print("🛑 Stopping REW Pi Audio Service...")
         self.logger.info("Stopping REW Audio Service...")
         
         # Stop mDNS advertisement
@@ -301,6 +390,7 @@ class REWAudioService:
         # Stop audio receiver
         self.audio_receiver.stop()
         
+        print("✅ REW Pi Audio Service stopped")
         self.logger.info("REW Audio Service stopped")
 
 

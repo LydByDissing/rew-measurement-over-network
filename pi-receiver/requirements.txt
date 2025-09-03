@@ -1,0 +1,12 @@
+# REW Pi Receiver Dependencies
+# Compatible with Python 3.7+ (including 3.12)
+
+# Core audio library for ALSA interaction
+pyalsaaudio>=0.10.0
+
+# Service discovery (mDNS/Bonjour)
+zeroconf>=0.39.0
+
+# Build dependencies (may be needed for some systems)
+wheel>=0.37.0
+setuptools>=65.0.0

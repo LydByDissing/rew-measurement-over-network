@@ -1,0 +1,37 @@
+# Simple Dockerfile for REW Pi Audio Receiver
+# Focuses on basic functionality without complex dependencies
+
+FROM python:3.12-slim
+
+# Install only essential system dependencies
+RUN apt-get update && apt-get install -y \
+    alsa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r rew && useradd -r -g rew -d /app -s /bin/bash rew
+
+# Set working directory
+WORKDIR /app
+
+# Copy simple receiver
+COPY rew_audio_receiver_simple.py .
+
+# Make it executable
+RUN chmod +x rew_audio_receiver_simple.py && \
+    chown -R rew:rew /app
+
+# Switch to non-root user
+USER rew
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV RTP_PORT=5004
+ENV HTTP_PORT=8080
+ENV AUDIO_DEVICE=default
+
+# Expose ports
+EXPOSE 5004/udp 8080/tcp
+
+# Default command
+CMD ["python3", "rew_audio_receiver_simple.py", "--rtp-port", "5004", "--http-port", "8080", "--verbose"]

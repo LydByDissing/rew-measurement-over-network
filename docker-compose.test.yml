@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  # Java audio bridge (simulates the desktop/REW side)
+  java-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.java-bridge
+    container_name: rew-java-bridge
+    networks:
+      rew-test-net:
+        ipv4_address: 192.168.100.10
+    ports:
+      - "8080:8080"  # GUI/API access
+      - "5005:5005/udp"  # RTP streaming port
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - PULSE_RUNTIME_PATH=/run/pulse
+      - PULSE_SERVER=unix:/run/pulse/native
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ./test-audio:/test-audio:ro  # Test audio files
+      - pulse-socket:/run/pulse
+    depends_on:
+      - pi-receiver-1
+      - pi-receiver-2
+    command: >
+      bash -c "
+        echo '🚀 Starting Java Audio Bridge Test Environment'
+        echo 'Bridge IP: 192.168.100.10'
+        echo 'Pi Receivers: 192.168.100.11, 192.168.100.12'
+        java -jar /app/audio-bridge.jar --headless --discover
+      "
+
+  # First Pi receiver (simulates Pi device #1)
+  pi-receiver-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.pi-receiver
+    container_name: rew-pi-1
+    hostname: rew-pi-1
+    networks:
+      rew-test-net:
+        ipv4_address: 192.168.100.11
+    ports:
+      - "5004:5004/udp"  # RTP audio port
+      - "8081:8080"      # HTTP status port
+    environment:
+      - PI_HOSTNAME=rew-pi-1
+      - PI_IP=192.168.100.11
+      - RTP_PORT=5004
+      - HTTP_PORT=8080
+    volumes:
+      - pi1-audio:/tmp/audio
+    command: >
+      bash -c "
+        echo '🥧 Starting Pi Receiver 1'
+        echo 'IP: 192.168.100.11'
+        echo 'RTP Port: 5004'
+        echo 'HTTP Status: http://192.168.100.11:8080/status'
+        /app/entrypoint.sh --device null --rtp-port 5004 --http-port 8080 --verbose
+      "
+
+  # Second Pi receiver (simulates Pi device #2) 
+  pi-receiver-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.pi-receiver
+    container_name: rew-pi-2
+    hostname: rew-pi-2
+    networks:
+      rew-test-net:
+        ipv4_address: 192.168.100.12
+    ports:
+      - "5006:5004/udp"  # RTP audio port (mapped to different host port)
+      - "8082:8080"      # HTTP status port (mapped to different host port)
+    environment:
+      - PI_HOSTNAME=rew-pi-2
+      - PI_IP=192.168.100.12
+      - RTP_PORT=5004
+      - HTTP_PORT=8080
+    volumes:
+      - pi2-audio:/tmp/audio
+    command: >
+      bash -c "
+        echo '🥧 Starting Pi Receiver 2'
+        echo 'IP: 192.168.100.12'
+        echo 'RTP Port: 5004'  
+        echo 'HTTP Status: http://192.168.100.12:8080/status'
+        /app/entrypoint.sh --device null --rtp-port 5004 --http-port 8080 --verbose
+      "
+
+  # Test runner (orchestrates the integration tests)
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    container_name: rew-test-runner
+    networks:
+      rew-test-net:
+        ipv4_address: 192.168.100.100
+    volumes:
+      - ./test-results:/test-results
+      - ./test-audio:/test-audio:ro
+      - pulse-socket:/run/pulse
+    depends_on:
+      - java-bridge
+      - pi-receiver-1
+      - pi-receiver-2
+    environment:
+      - TEST_NETWORK=192.168.100.0/24
+      - JAVA_BRIDGE_IP=192.168.100.10
+      - PI1_IP=192.168.100.11
+      - PI2_IP=192.168.100.12
+    command: >
+      bash -c "
+        echo '🧪 Starting End-to-End Test Suite'
+        echo 'Test Network: 192.168.100.0/24'
+        sleep 10  # Wait for services to start
+        /app/run-integration-tests.sh
+      "
+
+networks:
+  rew-test-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+          gateway: 192.168.100.1
+
+volumes:
+  pulse-socket:
+  pi1-audio:
+  pi2-audio:

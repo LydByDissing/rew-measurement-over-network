@@ -1,0 +1,38 @@
+
+services:
+  rew-receiver-simple:
+    build: 
+      context: .
+      dockerfile: Dockerfile.simple
+    image: rew-receiver-simple:latest
+    container_name: rew-audio-receiver-simple
+    
+    # Use host network for UDP traffic
+    network_mode: host
+    
+    environment:
+      - RTP_PORT=5004
+      - HTTP_PORT=8080
+      - AUDIO_DEVICE=default
+    
+    # Mount PulseAudio if available (optional)
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /run/pulse:/run/pulse:ro
+    
+    # For local testing, we can use null audio device
+    command: ["python3", "rew_audio_receiver_simple.py", 
+              "--rtp-port", "5004", 
+              "--http-port", "8080", 
+              "--device", "null",
+              "--verbose"]
+    
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-DEVICE_NAME="REW_Network_Bridge"
+DEVICE_NAME="REW_Network_Audio_Bridge"
 DEVICE_DESCRIPTION="REW Network Audio Bridge"
 CONFIG_FILE="$HOME/.rew-loopback"
 
@@ -106,6 +106,10 @@ create_device() {
     
     log "Created null-sink with module ID: $SINK_MODULE_ID"
     
+    # Step 1.5: Set a user-friendly description
+    log "Setting device description"
+    pacmd update-sink-proplist "$DEVICE_NAME" 'device.description="'"$DEVICE_DESCRIPTION"'"' &>/dev/null || true
+    
     # Step 2: Create loopback so user hears audio through speakers
     log "Creating speaker loopback"
     LOOPBACK_MODULE_ID=$(pactl load-module module-loopback \
@@ -176,6 +180,26 @@ remove_device() {
                 if pactl unload-module "$module_id" 2>/dev/null; then
                     log "Removed module: $module_id"
                     removed_something=true
+                fi
+            done
+        fi
+    fi
+    
+    # Additional cleanup: remove any orphaned null sinks that match REW patterns
+    if ! $removed_something; then
+        warning "Trying to clean up any orphaned REW devices..."
+        
+        # Look for any REW-related sinks
+        local rew_sinks=$(pactl list short sinks | grep -E "REW|rew" | awk '{print $1}')
+        if [ -n "$rew_sinks" ]; then
+            for sink_id in $rew_sinks; do
+                # Find the module that owns this sink
+                local owner_module=$(pactl list sinks | grep -A 20 "Sink #$sink_id" | grep "Owner Module:" | awk '{print $3}')
+                if [ -n "$owner_module" ] && [ "$owner_module" != "n/a" ]; then
+                    if pactl unload-module "$owner_module" 2>/dev/null; then
+                        log "Removed orphaned REW sink module: $owner_module"
+                        removed_something=true
+                    fi
                 fi
             done
         fi
@@ -274,6 +298,107 @@ list_devices() {
     done
 }
 
+# Comprehensive cleanup of all REW devices
+cleanup_all_rew_devices() {
+    local cleaned_something=false
+    
+    log "Scanning for all REW-related devices..."
+    
+    # Find all null sinks that might be REW-related
+    local all_null_sinks=$(pactl list short modules | grep "module-null-sink" | awk '{print $1}')
+    
+    if [ -n "$all_null_sinks" ]; then
+        for module_id in $all_null_sinks; do
+            # Get the sink name for this module
+            local sink_name=$(pactl list modules | grep -A 10 "Module #$module_id" | grep "sink_name=" | cut -d'"' -f2)
+            
+            if [[ "$sink_name" == *"REW"* ]] || [[ "$sink_name" == *"rew"* ]]; then
+                log "Found REW null-sink module: $module_id (sink: $sink_name)"
+                
+                # Find and remove associated loopback modules
+                local loopback_modules=$(pactl list short modules | grep "module-loopback" | grep "$sink_name.monitor" | awk '{print $1}')
+                for lb_module in $loopback_modules; do
+                    if pactl unload-module "$lb_module" 2>/dev/null; then
+                        log "Removed associated loopback module: $lb_module"
+                        cleaned_something=true
+                    fi
+                done
+                
+                # Remove the null-sink module
+                if pactl unload-module "$module_id" 2>/dev/null; then
+                    log "Removed REW null-sink module: $module_id"
+                    cleaned_something=true
+                fi
+            fi
+        done
+    fi
+    
+    # Also try to remove any remaining REW sinks directly
+    local rew_sinks=$(pactl list short sinks | grep -E "REW|rew" | awk '{print $1}')
+    if [ -n "$rew_sinks" ]; then
+        for sink_id in $rew_sinks; do
+            local owner_module=$(pactl list sinks | grep -A 20 "Sink #$sink_id" | grep "Owner Module:" | awk '{print $3}')
+            if [ -n "$owner_module" ] && [ "$owner_module" != "n/a" ]; then
+                if pactl unload-module "$owner_module" 2>/dev/null; then
+                    log "Removed remaining REW sink module: $owner_module"
+                    cleaned_something=true
+                fi
+            fi
+        done
+    fi
+    
+    # Clean up config files
+    remove_config
+    
+    if $cleaned_something; then
+        success "REW device cleanup completed successfully!"
+    else
+        log "No REW devices found to clean up"
+    fi
+}
+
+# Fix PulseAudio connection issues
+fix_pulseaudio() {
+    log "Checking PulseAudio daemon status..."
+    
+    if pulseaudio --check; then
+        log "PulseAudio daemon is running"
+        
+        # Test connection
+        if pactl info &> /dev/null; then
+            success "PulseAudio connection is working"
+            return 0
+        else
+            warning "PulseAudio daemon running but pactl cannot connect"
+        fi
+    else
+        warning "PulseAudio daemon is not running"
+    fi
+    
+    log "Restarting PulseAudio daemon..."
+    
+    # Kill any existing daemon
+    pulseaudio --kill 2>/dev/null || true
+    
+    # Wait a moment
+    sleep 2
+    
+    # Start daemon
+    pulseaudio --start
+    
+    # Wait a moment for startup
+    sleep 2
+    
+    # Test connection
+    if pactl info &> /dev/null; then
+        success "PulseAudio connection restored!"
+        return 0
+    else
+        error "Failed to restore PulseAudio connection"
+        return 1
+    fi
+}
+
 # Show usage information
 show_usage() {
     cat << EOF
@@ -287,6 +412,8 @@ Commands:
     status      Show device status
     list        List all audio devices
     restart     Remove and recreate device
+    cleanup     Remove ALL REW devices (comprehensive cleanup)
+    fix         Fix PulseAudio connection issues
     help        Show this help message
 
 Examples:
@@ -336,6 +463,14 @@ main() {
             remove_device
             sleep 1
             create_device
+            ;;
+        "cleanup")
+            log "Performing comprehensive cleanup..."
+            cleanup_all_rew_devices
+            ;;
+        "fix-pulseaudio"|"fix")
+            log "Fixing PulseAudio connection issues..."
+            fix_pulseaudio
             ;;
         "help"|"-h"|"--help")
             show_usage

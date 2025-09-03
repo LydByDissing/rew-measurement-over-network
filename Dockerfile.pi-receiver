@@ -1,0 +1,90 @@
+# Dockerfile for Pi Audio Receiver Test Container
+FROM python:3.12-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    alsa-utils \
+    libasound2-dev \
+    avahi-utils \
+    avahi-daemon \
+    netcat-traditional \
+    iputils-ping \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/rew-venv
+
+# Install Python dependencies in virtual environment
+RUN /opt/rew-venv/bin/pip install --upgrade pip && \
+    /opt/rew-venv/bin/pip install --no-cache-dir \
+        wheel>=0.37.0 \
+        setuptools>=65.0.0 \
+        pyalsaaudio>=0.10.0 \
+        zeroconf>=0.39.0
+
+# Create app directory
+WORKDIR /app
+
+# Copy Pi receiver files
+COPY pi-receiver/rew_audio_receiver.py /app/
+COPY pi-receiver/requirements.txt /app/ 2>/dev/null || echo "# No requirements.txt found" > /app/requirements.txt
+
+# Create ALSA configuration for null output
+RUN mkdir -p /home/root/.asoundrc.d
+COPY <<EOF /etc/asound.conf
+# ALSA configuration for containerized Pi receiver
+pcm.!default {
+    type null
+}
+
+pcm.null {
+    type null
+}
+
+ctl.!default {
+    type null
+}
+EOF
+
+# Create test script
+COPY <<EOF /app/test-receiver.sh
+#!/bin/bash
+set -e
+
+echo "🧪 Testing Pi Receiver in Container"
+echo "Container IP: \$(hostname -I | awk '{print \$1}')"
+
+# Activate virtual environment
+source /opt/rew-venv/bin/activate
+
+# Test Python imports
+echo "✅ Testing Python imports"
+python -c "import alsaaudio, zeroconf; print('All imports successful')"
+echo "Python version: \$(python --version)"
+
+echo "✅ Testing receiver startup"
+timeout 5 python /app/rew_audio_receiver.py --help || true
+
+echo "✅ Pi Receiver container test completed"
+EOF
+
+RUN chmod +x /app/test-receiver.sh
+
+# Create audio directory
+RUN mkdir -p /tmp/audio
+
+# Expose ports
+EXPOSE 5004/udp 8080
+
+# Create entrypoint script to activate venv
+COPY <<EOF /app/entrypoint.sh
+#!/bin/bash
+source /opt/rew-venv/bin/activate
+exec python /app/rew_audio_receiver.py "\$@"
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+# Default command  
+CMD ["/app/entrypoint.sh", "--device", "null", "--verbose"]
