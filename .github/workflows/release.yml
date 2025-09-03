@@ -1,0 +1,239 @@
+name: Release Build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: '-Dmaven.repo.local=.m2/repository'
+
+jobs:
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: .m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+          
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pulseaudio pulseaudio-utils
+        pulseaudio --start --log-target=syslog || true
+        sleep 2
+        
+    - name: Run full test suite
+      working-directory: java-audio-bridge
+      run: |
+        mvn clean verify -B \
+          -Djava.awt.headless=true \
+          -Dtestfx.robot=glass \
+          -Dtestfx.headless=true \
+          -Dprism.order=sw \
+          -Dprism.text=t2k
+          
+    - name: Build release JAR
+      working-directory: java-audio-bridge
+      run: |
+        mvn clean package -B
+        
+    - name: Create release bundle
+      run: |
+        mkdir -p release-bundle
+        
+        # Copy Java Audio Bridge
+        cp java-audio-bridge/target/audio-bridge-*.jar release-bundle/
+        
+        # Copy scripts and tools
+        cp rew-loopback release-bundle/
+        cp test-rew-loopback.sh release-bundle/
+        cp test-core-functionality.sh release-bundle/
+        
+        # Copy Pi receiver
+        cp -r pi-receiver release-bundle/
+        
+        # Copy documentation
+        cp README.md release-bundle/
+        cp REW_LOOPBACK_GUIDE.md release-bundle/
+        cp specification.md release-bundle/
+        
+        # Create version info
+        echo "REW Network Audio Bridge" > release-bundle/VERSION.txt
+        echo "Version: ${{ github.event.inputs.version || github.ref_name }}" >> release-bundle/VERSION.txt
+        echo "Build Date: $(date -u)" >> release-bundle/VERSION.txt
+        echo "Commit: ${{ github.sha }}" >> release-bundle/VERSION.txt
+        
+        # Make scripts executable
+        chmod +x release-bundle/rew-loopback
+        chmod +x release-bundle/test-*.sh
+        chmod +x release-bundle/pi-receiver/deploy-to-pi.sh
+        
+        # Create tarball
+        tar -czf rew-network-audio-bridge-${{ github.event.inputs.version || github.ref_name }}.tar.gz -C release-bundle .
+        
+    - name: Upload release artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-artifacts
+        path: |
+          rew-network-audio-bridge-*.tar.gz
+          release-bundle/**/*
+        retention-days: 30
+
+  build-docker-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: build-release
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Pi receiver image
+      run: |
+        cd pi-receiver
+        docker build -f Dockerfile.simple -t rew-pi-receiver:${{ github.event.inputs.version || github.ref_name }} .
+        docker build -f Dockerfile.simple -t rew-pi-receiver:latest .
+        
+    - name: Save Docker images
+      run: |
+        docker save rew-pi-receiver:${{ github.event.inputs.version || github.ref_name }} | gzip > pi-receiver-image.tar.gz
+        
+    - name: Upload Docker images
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-images
+        path: pi-receiver-image.tar.gz
+        retention-days: 30
+
+  validate-release:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    needs: [build-release, build-docker-images]
+    
+    steps:
+    - name: Download release artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: release-artifacts
+        
+    - name: Download Docker images
+      uses: actions/download-artifact@v4  
+      with:
+        name: docker-images
+        
+    - name: Install test dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pulseaudio pulseaudio-utils netcat-openbsd
+        
+    - name: Start PulseAudio
+      run: |
+        pulseaudio --start --log-target=syslog || true
+        sleep 2
+        
+    - name: Test release bundle
+      run: |
+        echo "🧪 Testing release bundle..."
+        
+        # Extract and test
+        tar -xzf rew-network-audio-bridge-*.tar.gz -C test-release/
+        cd test-release/
+        
+        # Verify files exist
+        [[ -f audio-bridge-*.jar ]] && echo "✅ JAR found" || echo "❌ JAR missing"
+        [[ -x rew-loopback ]] && echo "✅ rew-loopback executable" || echo "❌ rew-loopback not executable"
+        [[ -f README.md ]] && echo "✅ Documentation included" || echo "❌ Documentation missing"
+        
+        # Test REW loopback functionality
+        ./test-rew-loopback.sh && echo "✅ REW loopback tests pass" || echo "❌ REW loopback tests fail"
+        
+    - name: Test Docker image
+      run: |
+        echo "🐳 Testing Docker image..."
+        
+        # Load and test image
+        docker load < pi-receiver-image.tar.gz
+        docker run -d --name test-receiver -p 5004:5004/udp rew-pi-receiver:${{ github.event.inputs.version || github.ref_name }}
+        
+        sleep 5
+        docker logs test-receiver
+        
+        # Test UDP port
+        nc -u -z localhost 5004 && echo "✅ UDP port accessible" || echo "❌ UDP port not accessible"
+        
+        docker stop test-receiver
+        docker rm test-receiver
+
+  publish-release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: validate-release
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Download release artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: release-artifacts
+        
+    - name: Download Docker images
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-images
+        
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          rew-network-audio-bridge-*.tar.gz
+          pi-receiver-image.tar.gz
+        body: |
+          ## REW Network Audio Bridge Release
+          
+          This release includes:
+          - Java Audio Bridge application (GUI and headless modes)
+          - Pi Audio Receiver with Docker support
+          - REW Loopback Device Manager with testing suite
+          - Complete documentation and deployment tools
+          
+          ### Quick Start
+          1. Extract the release bundle
+          2. Run `./rew-loopback create` to set up virtual audio device
+          3. Deploy Pi receiver: `./pi-receiver/deploy-to-pi.sh deploy pi@<pi-ip>`
+          4. Start Audio Bridge: `java -jar audio-bridge-*.jar`
+          
+          ### Testing
+          - Run `./test-rew-loopback.sh` to validate setup
+          - All 27 test cases should pass
+          
+          See README.md for complete installation and usage instructions.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

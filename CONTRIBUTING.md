@@ -1,245 +1,361 @@
-# Contributing to REW Measurements over Network
+# Contributing to REW Network Audio Bridge
 
-Thank you for your interest in contributing to this project! This guide will help you get started.
+Welcome! This guide will help you contribute effectively to the REW Network Audio Bridge project.
 
-## 🎯 Project Vision
+## 🚀 Quick Start
 
-We're building an automated, network-based audio measurement system that bridges the gap between manual REW measurements and professional automated testing solutions.
+1. **Fork and clone the repository**
+2. **Install dependencies** (see [Development Setup](#development-setup))  
+3. **Run tests** to ensure everything works: `./test-rew-loopback.sh`
+4. **Make your changes**
+5. **Run tests again** to prevent regressions
+6. **Submit a pull request**
 
-## 🚀 Getting Started
+## 🛠️ Development Setup
 
 ### Prerequisites
-- Python 3.8+
-- REW (Room EQ Wizard) - latest version with API support
-- Basic understanding of audio measurements and DSP concepts
 
-### Development Setup
-*Coming soon as the project structure develops*
+**System Requirements:**
+- **Java 21** (OpenJDK recommended)
+- **Maven 3.6+** for Java builds
+- **PulseAudio** for virtual audio device testing
+- **Docker** (optional, for Pi receiver development)
 
-## 🤝 How to Contribute
-
-### Areas Where Help is Needed
-
-1. **Core Development**
-   - Python API clients for REW integration
-   - Raspberry Pi service implementation
-   - Network communication protocols
-
-2. **Hardware Integration**
-   - CamillaDSP configuration management
-   - Audio interface optimization for RPi Zero W
-   - Hardware-specific adaptations
-
-3. **Documentation**
-   - Setup and installation guides
-   - Usage examples and tutorials
-   - API documentation
-
-4. **Testing**
-   - Hardware compatibility testing
-   - Network latency and reliability testing
-   - Cross-platform validation
-
-### Contribution Process
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-## 📋 Development Guidelines
-
-### Code Quality Standards
-
-#### Testing Requirements
-- **Test-First Development**: Always create tests for new features before implementation
-- **Regression Protection**: Ensure comprehensive tests are in place before modifying existing functionality
-- **Test Coverage**: Aim for >80% code coverage on core components
-- **Hardware Testing**: Test on actual RPi Zero W and various audio interfaces when possible
-- **Cross-Platform Testing**: Validate on Windows, macOS, and Linux
-
-#### Java Development Standards
-- **Build System**: Use Maven for all Java components
-- **Documentation**: Use Javadoc for all public classes, methods, and interfaces
-- **Code Style**: Follow Google Java Style Guide or Oracle Java conventions
-- **Dependencies**: Minimize external dependencies, prefer standard library when possible
-- **Testing Framework**: Use JUnit 5 for unit tests, TestFX for GUI testing
-
-#### Python Development Standards (RPi Components)
-- **Code Style**: Follow PEP 8 for Python code
-- **Documentation**: Use docstrings for all public functions and classes
-- **Type Hints**: Add type annotations for function parameters and return values
-- **Testing Framework**: Use pytest for unit tests
-
-### Project Structure Standards
-
-#### Java Components (Maven Layout)
-```
-java-audio-bridge/
-├── pom.xml
-├── src/
-│   ├── main/java/com/lydbydissing/
-│   │   ├── audio/          # Audio streaming components
-│   │   ├── network/        # Network communication
-│   │   ├── gui/           # User interface
-│   │   └── util/          # Utilities and helpers
-│   ├── main/resources/    # Configuration files, assets
-│   └── test/java/         # Unit and integration tests
-└── target/                # Maven build output
+**For Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install -y openjdk-21-jdk maven pulseaudio pulseaudio-utils docker.io
 ```
 
-#### Maven Build Requirements
-- **Java Version**: Target Java 21 LTS (current LTS as of 2025)
-- **Artifact Naming**: Group ID: `com.lydbydissing`, Artifact ID: `audio-bridge`
-- **Executable JAR**: Use maven-shade-plugin for single JAR distribution
-- **Quality Plugins**: Include SpotBugs, Checkstyle, and JaCoCo for code quality
+### Project Structure
 
-### Documentation Standards
-
-#### Javadoc Requirements
-```java
-/**
- * Establishes RTP audio stream connection to Raspberry Pi device.
- * 
- * @param piDevice The target Pi device discovered via mDNS
- * @param audioFormat The audio format for streaming (sample rate, bit depth)
- * @param bufferSize Buffer size in milliseconds for network streaming
- * @return Connection object for managing the audio stream
- * @throws NetworkException if connection cannot be established
- * @throws AudioException if audio format is not supported
- * @since 1.0
- */
-public AudioConnection connectToPi(PiDevice piDevice, 
-                                   AudioFormat audioFormat, 
-                                   int bufferSize) throws NetworkException, AudioException {
-    // Implementation
-}
+```
+rew-measurement-over-network/
+├── java-audio-bridge/          # Main Java application
+│   ├── src/main/java/          # Java source code
+│   ├── src/test/java/          # Unit tests
+│   └── pom.xml                 # Maven configuration
+├── pi-receiver/                # Raspberry Pi receiver
+│   ├── Dockerfile.simple       # Docker container
+│   └── deploy-to-pi.sh         # Deployment script
+├── rew-loopback                # Virtual audio device manager
+├── test-*.sh                   # Test scripts
+└── .github/workflows/          # CI/CD pipelines
 ```
 
-#### Code Comments
-- **When to Comment**: Complex algorithms, business logic, workarounds
-- **What to Avoid**: Obvious operations, redundant descriptions
-- **Focus on Why**: Explain reasoning behind implementation decisions
+### Local Development
 
-### Testing Standards
+1. **Clone and setup:**
+   ```bash
+   git clone https://github.com/your-fork/rew-measurement-over-network.git
+   cd rew-measurement-over-network
+   chmod +x rew-loopback test-*.sh
+   ```
 
-#### Unit Testing Requirements
-```java
-@Test
-@DisplayName("Should establish RTP connection with valid Pi device")
-void shouldConnectToPiWithValidDevice() {
-    // Given
-    PiDevice mockPi = createMockPiDevice("192.168.1.100");
-    AudioFormat format = new AudioFormat(48000, 16, 2, true, false);
-    
-    // When
-    AudioConnection connection = audioService.connectToPi(mockPi, format, 100);
-    
-    // Then
-    assertThat(connection.isConnected()).isTrue();
-    assertThat(connection.getLatency()).isLessThan(50);
-}
+2. **Run REW loopback tests:**
+   ```bash
+   ./test-rew-loopback.sh
+   ```
+
+3. **Build Java application:**
+   ```bash
+   cd java-audio-bridge
+   mvn clean compile
+   mvn test
+   mvn package
+   ```
+
+4. **Test Docker setup:**
+   ```bash
+   ./test-docker-setup.sh
+   ```
+
+## 🧪 Testing
+
+### Test Philosophy
+
+We maintain comprehensive test coverage to ensure reliability:
+
+- **Unit tests** for individual components
+- **Integration tests** for component interaction
+- **System tests** for end-to-end functionality
+- **Regression tests** to prevent breaking changes
+
+### Running Tests
+
+**All tests:**
+```bash
+# REW loopback functionality (27 test cases)
+./test-rew-loopback.sh
+
+# Core Java functionality
+cd java-audio-bridge && mvn test
+
+# Docker containers
+./test-docker-setup.sh
+
+# Integration tests
+./test-integration.sh
 ```
 
-#### Integration Testing
-- **Network Testing**: Mock network conditions (latency, packet loss)
-- **Audio Testing**: Validate audio stream integrity and timing
-- **Hardware Testing**: Automated tests with actual RPi Zero W devices
-- **Cross-Platform Testing**: CI/CD pipeline testing on multiple OS
+**Specific test categories:**
+```bash
+# Only Java unit tests
+cd java-audio-bridge && mvn test -Dtest="*Test"
 
-### Build and Deployment Standards
+# Only integration tests
+cd java-audio-bridge && mvn test -Dtest="*IT"
 
-#### Maven Configuration
-```xml
-<properties>
-    <maven.compiler.source>11</maven.compiler.source>
-    <maven.compiler.target>11</maven.compiler.target>
-    <junit.version>5.9.2</junit.version>
-    <jacoco.version>0.8.8</jacoco.version>
-</properties>
+# REW loopback with verbose output
+VERBOSE=1 ./test-rew-loopback.sh
 ```
 
-#### Quality Gates
-- **Build Success**: All tests must pass
-- **Code Coverage**: Minimum 80% line coverage
-- **Static Analysis**: Zero critical SpotBugs violations
-- **Documentation**: All public APIs must have Javadoc
-- **Style Compliance**: Checkstyle violations block build
+### Test Requirements
 
-### Commit and PR Standards
+- **All tests must pass** before submitting PRs
+- **New features require tests** (aim for >80% coverage)
+- **Bug fixes should include regression tests**
+- **Tests should be fast** (< 30 seconds per test suite)
 
-#### Commit Messages
+## 📝 Code Style and Standards
+
+### Java Code Style
+
+We use **Google Java Style** with minor modifications:
+
+```bash
+# Run Checkstyle validation
+cd java-audio-bridge && mvn checkstyle:check
+
+# Generate coverage reports
+mvn clean test jacoco:report
 ```
-feat(audio): add RTP streaming with automatic Pi discovery
 
-- Implement mDNS service discovery for Pi devices
-- Add RTP packet encoding with configurable quality
-- Include connection retry logic with exponential backoff
-- Add comprehensive unit tests for network components
+**Key conventions:**
+- **4-space indentation** (no tabs)
+- **120-character line limit**
+- **Descriptive variable names**
+- **JavaDoc for public methods**
+- **No commented-out code**
 
-Closes #15, Closes #18
+### Shell Script Style
+
+For bash scripts (rew-loopback, test scripts):
+
+- **4-space indentation**
+- **Descriptive function names**
+- **Proper error handling** with `set -euo pipefail`
+- **Colored output** for user feedback
+- **Comprehensive comments** for complex logic
+
+### Git Commit Style
+
+We follow **Conventional Commits**:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
 ```
 
-#### Pull Request Requirements
-- **Description**: Clear description of changes and rationale
-- **Testing Evidence**: Screenshots, test results, hardware validation
-- **Documentation Updates**: Update relevant docs and Javadoc
-- **Breaking Changes**: Clearly marked and documented
-- **Review Requirements**: At least one approving review required
+**Examples:**
+```
+feat(audio): add headless mode support
+fix(loopback): resolve duplicate device creation
+docs(readme): update installation instructions
+test(ci): add Docker integration tests
+```
 
-## 🐛 Reporting Issues
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `test`: Test additions/modifications
+- `refactor`: Code refactoring
+- `style`: Formatting changes
+- `ci`: CI/CD changes
 
-When reporting issues, please include:
-- Operating system and version
-- Python version
-- REW version
-- Hardware configuration (if applicable)
-- Steps to reproduce
-- Expected vs actual behavior
-- Relevant log output
+## 🏗️ Architecture Guidelines
 
-## 💡 Suggesting Features
+### Component Design
 
-We welcome feature suggestions! Please:
-- Check existing issues first
-- Clearly describe the use case
-- Explain how it fits the project goals
-- Consider implementation complexity
+**Java Audio Bridge:**
+- **MVC pattern** for GUI components
+- **Service layer** for business logic
+- **Repository pattern** for configuration
+- **Dependency injection** where appropriate
 
-## 📚 Resources
+**Audio Processing:**
+- **Minimal latency** design (<50ms total)
+- **Robust error handling** for audio device failures
+- **Graceful degradation** when devices unavailable
+- **Resource cleanup** on shutdown
 
-- [REW Documentation](https://www.roomeqwizard.com/help/)
-- [CamillaDSP GitHub](https://github.com/HEnquist/camilladsp)
-- [Project Specification](specification.md)
+### Performance Requirements
 
-## 🔧 Development Roadmap
+- **Startup time**: <5 seconds
+- **Audio latency**: <50ms end-to-end
+- **Memory usage**: <100MB under normal operation
+- **CPU usage**: <10% on modern systems
 
-### Phase 1: Foundation
-- [ ] Basic network communication
-- [ ] REW API client
-- [ ] CamillaDSP integration
+## 🔄 Pull Request Process
 
-### Phase 2: Automation
-- [ ] Measurement sequences
-- [ ] Configuration management
-- [ ] Error handling
+### Before Submitting
 
-### Phase 3: Enhancement
-- [ ] Web interface
-- [ ] Advanced features
-- [ ] Performance optimization
+1. **Run full test suite:**
+   ```bash
+   ./test-rew-loopback.sh
+   cd java-audio-bridge && mvn clean verify
+   ./test-integration.sh
+   ```
 
-## 📞 Communication
+2. **Check code quality:**
+   ```bash
+   cd java-audio-bridge && mvn checkstyle:check
+   ```
 
-- **Issues**: Use GitHub Issues for bug reports and feature requests
-- **Discussions**: GitHub Discussions for general questions and ideas
-- **Security**: Email maintainers directly for security concerns
+3. **Update documentation** if needed
+4. **Test manually** with real audio devices
 
-## 🙏 Recognition
+### PR Description Template
 
-All contributors will be acknowledged in the project documentation and release notes.
+```markdown
+## Summary
+Brief description of changes
+
+## Type of Change
+- [ ] Bug fix (non-breaking change fixing an issue)
+- [ ] New feature (non-breaking change adding functionality) 
+- [ ] Breaking change (fix or feature causing existing functionality to break)
+- [ ] Documentation update
+
+## Testing
+- [ ] Unit tests pass
+- [ ] Integration tests pass
+- [ ] Manual testing completed
+- [ ] REW loopback tests pass (27/27)
+
+## Checklist
+- [ ] Code follows project style guidelines
+- [ ] Self-review completed
+- [ ] Documentation updated
+- [ ] Tests added for new functionality
+```
+
+### Review Process
+
+1. **Automated checks** run via GitHub Actions
+2. **Code review** by maintainers
+3. **Testing verification** on multiple environments
+4. **Documentation review** for completeness
+5. **Merge** after approval
+
+## 🐛 Bug Reports
+
+### Reporting Issues
+
+**Use the issue template:**
+1. **Environment details** (OS, Java version, PulseAudio version)
+2. **Steps to reproduce** the issue
+3. **Expected vs actual behavior**
+4. **Logs and error messages**
+5. **Audio device configuration**
+
+**Helpful information:**
+```bash
+# System information
+java -version
+mvn -version
+pactl info
+
+# Audio device status
+./rew-loopback status
+pactl list short sinks
+
+# Application logs
+java -jar audio-bridge-*.jar --headless --verbose
+```
+
+### Bug Fix Process
+
+1. **Reproduce the issue** locally
+2. **Write a failing test** that demonstrates the bug
+3. **Fix the issue** with minimal code changes
+4. **Verify the test passes**
+5. **Run full test suite** to prevent regressions
+
+## 💡 Feature Requests
+
+### Proposing Features
+
+Before implementing new features:
+
+1. **Open an issue** describing the feature
+2. **Discuss the approach** with maintainers
+3. **Consider backwards compatibility**
+4. **Plan the testing strategy**
+5. **Update documentation plans**
+
+### Feature Development
+
+1. **Create feature branch** from `main`
+2. **Implement incrementally** with tests
+3. **Update documentation** throughout development
+4. **Test thoroughly** including edge cases
+5. **Submit PR** with comprehensive description
+
+## 🏷️ Release Process
+
+### Version Numbering
+
+We use **Semantic Versioning** (semver):
+- **Major**: Breaking changes
+- **Minor**: New features (backwards compatible)  
+- **Patch**: Bug fixes (backwards compatible)
+
+### Release Workflow
+
+1. **Version bump** in `pom.xml`
+2. **Update CHANGELOG.md** with release notes
+3. **Tag release** with `git tag v1.x.x`
+4. **GitHub Actions** builds release artifacts
+5. **Manual validation** of release bundle
+6. **Publish release** with artifacts and documentation
+
+## 🤝 Community
+
+### Getting Help
+
+- **GitHub Issues**: Bug reports and feature requests
+- **Discussions**: General questions and ideas
+- **Email**: For security issues or private concerns
+
+### Code of Conduct
+
+This project follows the [Contributor Covenant](https://www.contributor-covenant.org/):
+
+- **Be respectful** and inclusive
+- **Provide constructive feedback**
+- **Focus on collaboration**
+- **Help newcomers** get started
+
+## 📚 Additional Resources
+
+### Documentation
+
+- **README.md**: Project overview and quick start
+- **REW_LOOPBACK_GUIDE.md**: Detailed REW loopback usage
+- **specification.md**: Technical requirements and architecture
+
+### External References
+
+- **Room EQ Wizard (REW)**: [roomeqwizard.com](https://roomeqwizard.com)
+- **PulseAudio Documentation**: [freedesktop.org/wiki/Software/PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/)
+- **JavaFX Documentation**: [openjfx.io](https://openjfx.io)
+- **Maven Guide**: [maven.apache.org/guides](https://maven.apache.org/guides/)
 
 ---
 
-*This project is in early development. Guidelines may evolve as the project matures.*
+Thank you for contributing to REW Network Audio Bridge! Your improvements help make acoustic measurement more accessible and reliable for everyone. 🎵
