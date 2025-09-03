@@ -73,6 +73,9 @@ public class PulseAudioVirtualDevice {
         }
         
         try {
+            // Clean up any existing REW devices first
+            cleanupExistingDevices();
+            
             // Create the null sink (this is what REW will output to)
             createNullSink();
             
@@ -297,6 +300,52 @@ public class PulseAudioVirtualDevice {
         }
     }
     
+    /**
+     * Cleans up any existing REW devices to prevent conflicts.
+     */
+    private void cleanupExistingDevices() {
+        logger.debug("Cleaning up existing REW audio devices");
+        
+        try {
+            // Get list of modules that contain REW
+            String[] listCommand = {"pactl", "list", "short", "modules"};
+            ProcessResult listResult = runCommand(listCommand);
+            
+            if (listResult.exitCode == 0) {
+                String[] lines = listResult.stdout.split("\\n");
+                
+                for (String line : lines) {
+                    // Look for modules that contain REW in the name
+                    if (line.contains("REW") && (line.contains("null-sink") || line.contains("loopback"))) {
+                        String[] parts = line.split("\\t");
+                        if (parts.length > 0) {
+                            String moduleId = parts[0];
+                            
+                            try {
+                                String[] unloadCommand = {"pactl", "unload-module", moduleId};
+                                ProcessResult unloadResult = runCommand(unloadCommand);
+                                
+                                if (unloadResult.exitCode == 0) {
+                                    logger.debug("Cleaned up existing REW module: {}", moduleId);
+                                } else {
+                                    logger.debug("Could not unload module {} (may be already gone): {}", 
+                                               moduleId, unloadResult.stderr);
+                                }
+                                
+                            } catch (Exception e) {
+                                // Continue with other modules if one fails
+                                logger.debug("Failed to unload module {}: {}", moduleId, e.getMessage());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Don't fail the whole operation if cleanup fails
+            logger.debug("Error during device cleanup (non-critical): {}", e.getMessage());
+        }
+    }
+
     /**
      * Runs a system command and returns the result.
      * 

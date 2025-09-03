@@ -38,6 +38,11 @@ public class AudioBridgeMain extends Application {
      * @param args command line arguments
      */
     public static void main(String[] args) {
+        // Force software rendering to avoid GPU shader issues
+        System.setProperty("prism.order", "sw");
+        System.setProperty("prism.text", "t2k");
+        System.setProperty("java2d.opengl", "false");
+        
         logger.info("Starting REW Network Audio Bridge v{}", getVersion());
         
         try {
@@ -112,11 +117,6 @@ public class AudioBridgeMain extends Application {
             // Get the controller for cleanup purposes
             mainController = loader.getController();
             
-            // Pass CLI options to controller if available
-            if (cliOptions != null && cliOptions.getTargetIp() != null) {
-                mainController.setAutoConnectTarget(cliOptions.getTargetIp(), cliOptions.getTargetPort());
-            }
-            
             // Create scene
             javafx.scene.Scene scene = new javafx.scene.Scene(root, 800, 600);
             
@@ -126,10 +126,28 @@ public class AudioBridgeMain extends Application {
             primaryStage.setMinWidth(600);
             primaryStage.setMinHeight(400);
             
-            // TODO: Start Pi discovery service
-            // TODO: Initialize audio system
-            
+            // Show stage first
             primaryStage.show();
+            
+            // Handle CLI options after stage is shown
+            if (cliOptions != null) {
+                // Handle auto-connect
+                if (cliOptions.getTargetIp() != null) {
+                    mainController.setAutoConnectTarget(cliOptions.getTargetIp(), cliOptions.getTargetPort());
+                    
+                    // Trigger auto-connect after a small delay to ensure GUI is fully initialized
+                    javafx.application.Platform.runLater(() -> {
+                        try {
+                            Thread.sleep(1000); // Give GUI time to initialize
+                            mainController.triggerAutoConnect();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                }
+                
+            }
+            
             logger.info("Application started successfully");
             
         } catch (Exception e) {

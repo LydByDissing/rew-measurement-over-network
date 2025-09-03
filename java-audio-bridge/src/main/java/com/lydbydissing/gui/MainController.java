@@ -1,12 +1,9 @@
 package com.lydbydissing.gui;
 
-import com.lydbydissing.audio.JavaAudioLoopback;
-import com.lydbydissing.audio.PulseAudioLoopback;
 import com.lydbydissing.network.PiDiscoveryService;
-import com.lydbydissing.network.RTPAudioStreamer;
+import com.lydbydissing.service.AudioBridgeService;
 import javafx.application.Platform;
 
-import javax.sound.sampled.AudioFormat;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
@@ -22,6 +19,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.URL;
 import java.util.ResourceBundle;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  * Main controller for the REW Network Audio Bridge GUI.
@@ -73,10 +72,12 @@ public class MainController implements Initializable {
     private final ObservableList<PiDevice> discoveredDevices = FXCollections.observableArrayList();
     private final PiDiscoveryService discoveryService = new PiDiscoveryService();
     
-    // Audio components
-    private JavaAudioLoopback audioLoopback;
-    private PulseAudioLoopback pulseLoopback;
-    private RTPAudioStreamer activeStreamer;
+    // Audio bridge service
+    private final AudioBridgeService audioBridgeService = new AudioBridgeService();
+    
+    // Connection monitoring
+    private Timer connectionMonitorTimer;
+    private int connectionQualityTicks = 0;
     
     // Auto-connect configuration
     private String autoConnectIp;
@@ -100,13 +101,18 @@ public class MainController implements Initializable {
         // Start device discovery
         startDeviceDiscovery();
         
-        // Initialize audio loopback system
+        // Initialize audio system
         initializeAudioSystem();
         
-        // Perform auto-connect if configured
-        if (autoConnectIp != null) {
-            performAutoConnect();
-        }
+        // Set up audio level monitoring
+        Timer audioLevelTimer = new Timer(true);
+        audioLevelTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                double level = audioBridgeService.getCurrentAudioLevel();
+                Platform.runLater(() -> audioLevelIndicator.setProgress(level));
+            }
+        }, 0, 100); // Update every 100ms
         
         logger.info("Main controller initialized successfully");
     }
@@ -200,99 +206,38 @@ public class MainController implements Initializable {
     }
     
     /**
-     * Initializes the audio system with PulseAudio loopback and fallback.
+     * Initializes the audio system using shared AudioBridgeService.
      */
     private void initializeAudioSystem() {
         logger.info("Initializing audio system");
         
-        try {
-            // Try PulseAudio loopback first
-            pulseLoopback = new PulseAudioLoopback();
-            
-            // Set up audio data consumer to forward to RTP streamer
-            pulseLoopback.setAudioDataConsumer(audioData -> {
-                if (activeStreamer != null && activeStreamer.isStreaming()) {
-                    try {
-                        activeStreamer.streamAudioData(audioData);
-                    } catch (IOException e) {
-                        logger.error("Error streaming audio data", e);
-                        Platform.runLater(() -> logMessage("ERROR: Audio streaming failed - " + e.getMessage()));
-                    }
-                }
-            });
-            
-            // Start the PulseAudio loopback
-            pulseLoopback.start();
-            
+        // Set up callbacks for status updates
+        audioBridgeService.setOnAudioSystemInitialized(() -> {
             Platform.runLater(() -> {
-                audioStatusLabel.setText("Virtual device: " + pulseLoopback.getDeviceDescription());
-                logMessage("✅ PulseAudio loopback created: " + pulseLoopback.getDeviceDescription());
+                audioStatusLabel.setText(audioBridgeService.getAudioSystemDescription());
+                logMessage("✅ Audio system initialized: " + audioBridgeService.getAudioSystemDescription());
                 logMessage("");
                 logMessage("🎯 REW SETUP INSTRUCTIONS:");
                 logMessage("1. In REW, go to Preferences > Soundcard");
-                logMessage("2. Set Output Device to: '" + pulseLoopback.getDeviceName() + "'");
+                logMessage("2. Set Output Device to: '" + audioBridgeService.getVirtualDeviceName() + "'");
                 logMessage("3. Audio from REW will be automatically:");
                 logMessage("   • Played through your speakers");
                 logMessage("   • Streamed to connected Pi devices");
                 logMessage("");
                 logMessage("✅ Setup complete - ready for measurements!");
             });
-            
-        } catch (Exception e) {
-            logger.warn("PulseAudio loopback failed, using fallback: {}", e.getMessage());
-            Platform.runLater(() -> {
-                logMessage("⚠️  PulseAudio loopback failed: " + e.getMessage());
-                logMessage("🔄 Switching to fallback mode...");
-                initializeFallbackAudioLoopback();
-            });
-        }
-    }
-    
-    /**
-     * Fallback to Java audio loopback if PulseAudio is not available.
-     */
-    private void initializeFallbackAudioLoopback() {
-        logger.info("Initializing fallback Java audio loopback");
+        });
         
-        try {
-            audioLoopback = new JavaAudioLoopback();
-            
-            // Set up audio data consumer to forward to RTP streamer
-            audioLoopback.setAudioDataConsumer(audioData -> {
-                if (activeStreamer != null && activeStreamer.isStreaming()) {
-                    try {
-                        activeStreamer.streamAudioData(audioData);
-                    } catch (IOException e) {
-                        logger.error("Error streaming audio data", e);
-                        Platform.runLater(() -> logMessage("ERROR: Audio streaming failed - " + e.getMessage()));
-                    }
-                }
-            });
-            
-            // Set up audio level monitoring
-            audioLoopback.setAudioLevelConsumer(level -> {
-                Platform.runLater(() -> audioLevelIndicator.setProgress(level));
-            });
-            
-            // Start the audio loopback
-            audioLoopback.start();
-            
-            Platform.runLater(() -> {
-                audioStatusLabel.setText("Fallback mode: " + audioLoopback.getInterfaceDescription());
-                logMessage("Java audio loopback created: " + audioLoopback.getInterfaceDescription());
-                logMessage("FALLBACK MODE: REW must use default system audio output");
-                logMessage("Audio will be captured from system microphone");
-            });
-            
-        } catch (Exception e2) {
-            logger.error("Failed to initialize fallback audio loopback", e2);
+        // Initialize the audio system
+        if (!audioBridgeService.initializeAudioSystem()) {
             Platform.runLater(() -> {
                 audioStatusLabel.setText("Audio initialization failed");
-                logMessage("ERROR: All audio initialization methods failed");
+                logMessage("ERROR: Audio system initialization failed");
                 logMessage("Please check your audio system configuration");
             });
         }
     }
+    
     
     /**
      * Handles the connect button click event.
@@ -309,31 +254,25 @@ public class MainController implements Initializable {
         logger.info("Connecting to device: {}", selectedDevice.getName());
         logMessage("Connecting to " + selectedDevice.getName() + " (" + selectedDevice.getIpAddress() + ")");
         
-        try {
-            // Create RTP streamer for the selected device
-            AudioFormat streamFormat = JavaAudioLoopback.DEFAULT_FORMAT;
-                
-            activeStreamer = new RTPAudioStreamer(
-                java.net.InetAddress.getByName(selectedDevice.getIpAddress()),
-                RTPAudioStreamer.DEFAULT_RTP_PORT,
-                streamFormat
-            );
-            
-            // Start streaming
-            activeStreamer.startStreaming();
-            
+        // Set up callbacks for connection events
+        audioBridgeService.setOnConnectionEstablished(() -> {
             Platform.runLater(() -> {
                 connectionStatusLabel.setText("Connected to " + selectedDevice.getName());
                 connectButton.setDisable(true);
                 disconnectButton.setDisable(false);
-                logMessage("RTP audio streaming started to " + selectedDevice.getIpAddress() + ":" + RTPAudioStreamer.DEFAULT_RTP_PORT);
+                logMessage("Connected to " + selectedDevice.getIpAddress() + ":" + selectedDevice.getPort());
+                
+                // Start connection quality monitoring
+                startConnectionMonitoring();
             });
-            
-        } catch (Exception e) {
-            logger.error("Failed to connect to device", e);
+        });
+        
+        // Connect using shared service
+        if (!audioBridgeService.connectToDevice(selectedDevice.getIpAddress(), selectedDevice.getPort())) {
             Platform.runLater(() -> {
-                logMessage("ERROR: Failed to connect to " + selectedDevice.getName() + " - " + e.getMessage());
+                logMessage("ERROR: Failed to connect to " + selectedDevice.getName());
             });
+            return;
         }
     }
     
@@ -346,27 +285,20 @@ public class MainController implements Initializable {
         logger.info("Disconnecting from current device");
         logMessage("Disconnecting from device");
         
-        // Stop active audio streamer
-        if (activeStreamer != null) {
-            activeStreamer.close();
-            activeStreamer = null;
-        }
-        
-        Platform.runLater(() -> {
-            connectionStatusLabel.setText("Not connected");
-            
-            if (pulseLoopback != null && pulseLoopback.isActive()) {
-                audioStatusLabel.setText("Virtual device: " + pulseLoopback.getDeviceDescription());
-            } else if (audioLoopback != null && audioLoopback.isActive()) {
-                audioStatusLabel.setText("Fallback mode: " + audioLoopback.getInterfaceDescription());
-            } else {
-                audioStatusLabel.setText("No audio");
-            }
-            audioLevelIndicator.setProgress(0.0);
-            connectButton.setDisable(false);
-            disconnectButton.setDisable(true);
-            logMessage("Disconnected - RTP streaming stopped");
+        // Set up callback for disconnection
+        audioBridgeService.setOnConnectionLost(() -> {
+            Platform.runLater(() -> {
+                connectionStatusLabel.setText("Not connected");
+                audioStatusLabel.setText(audioBridgeService.getAudioSystemDescription());
+                audioLevelIndicator.setProgress(0.0);
+                connectButton.setDisable(false);
+                disconnectButton.setDisable(true);
+                logMessage("Disconnected - RTP streaming stopped");
+            });
         });
+        
+        // Disconnect using shared service
+        audioBridgeService.disconnect();
     }
     
     /**
@@ -576,25 +508,16 @@ public class MainController implements Initializable {
     public void cleanup() {
         logger.info("Cleaning up main controller resources");
         
-        // Stop PulseAudio loopback
-        if (pulseLoopback != null && pulseLoopback.isActive()) {
-            pulseLoopback.stop();
-        }
-        
-        // Stop Java audio loopback (fallback)
-        if (audioLoopback != null && audioLoopback.isActive()) {
-            audioLoopback.stop();
-        }
-        
-        // Stop active audio streamer
-        if (activeStreamer != null) {
-            activeStreamer.close();
-        }
+        // Shutdown audio bridge service
+        audioBridgeService.shutdown();
         
         // Stop discovery service
         if (discoveryService.isRunning()) {
             discoveryService.stopDiscovery();
         }
+        
+        // Stop connection monitoring
+        stopConnectionMonitoring();
         
         logger.info("Main controller cleanup complete");
     }
@@ -609,6 +532,50 @@ public class MainController implements Initializable {
         this.autoConnectIp = ip;
         this.autoConnectPort = port;
         logger.info("Auto-connect target set: {}:{}", ip, port);
+    }
+    
+    /**
+     * Triggers auto-connect if a target is configured.
+     * This method can be called after the GUI is fully initialized.
+     */
+    public void triggerAutoConnect() {
+        if (autoConnectIp != null) {
+            logger.info("Triggering auto-connect to {}:{}", autoConnectIp, autoConnectPort);
+            performAutoConnect();
+        } else {
+            logger.debug("No auto-connect target configured");
+        }
+    }
+    
+    /**
+     * Programmatically adds a manual device for testing purposes.
+     * 
+     * @param name The device name
+     * @param ip The device IP address
+     * @return true if device was added successfully
+     */
+    public boolean addManualDevice(String name, String ip) {
+        try {
+            logger.info("Adding manual device programmatically: {} at {}", name, ip);
+            
+            // Create a manual Pi device
+            PiDevice device = PiDevice.createManualDevice(name, ip);
+            
+            // Add to the discovered devices list
+            Platform.runLater(() -> {
+                discoveredDevices.add(device);
+                logger.info("Added manual device: {} at {}", device.getName(), device.getIpAddress());
+                
+                // Select the newly added device
+                deviceTable.getSelectionModel().select(device);
+            });
+            
+            return true;
+            
+        } catch (Exception e) {
+            logger.error("Failed to add manual device: {} at {}", name, ip, e);
+            return false;
+        }
     }
     
     /**
@@ -655,32 +622,107 @@ public class MainController implements Initializable {
         logger.info("Connecting to device: {} at {}:{}", device.getName(), device.getIpAddress(), port);
         logMessage("Connecting to " + device.getName() + " (" + device.getIpAddress() + ":" + port + ")");
         
-        try {
-            // Create RTP streamer for the device
-            AudioFormat streamFormat = JavaAudioLoopback.DEFAULT_FORMAT;
-                
-            activeStreamer = new RTPAudioStreamer(
-                java.net.InetAddress.getByName(device.getIpAddress()),
-                port,
-                streamFormat
-            );
-            
-            // Start streaming
-            activeStreamer.startStreaming();
-            
+        // Set up callbacks for connection events
+        audioBridgeService.setOnConnectionEstablished(() -> {
             Platform.runLater(() -> {
                 connectionStatusLabel.setText("Connected to " + device.getName());
                 connectButton.setDisable(true);
                 disconnectButton.setDisable(false);
                 logMessage("RTP audio streaming started to " + device.getIpAddress() + ":" + port);
                 logMessage("Connection successful - ready for REW measurements");
+                
+                // Start connection quality monitoring
+                startConnectionMonitoring();
             });
-            
-        } catch (Exception e) {
-            logger.error("Failed to connect to device", e);
+        });
+        
+        // Connect using shared service
+        if (!audioBridgeService.connectToDevice(device.getIpAddress(), port)) {
             Platform.runLater(() -> {
-                logMessage("ERROR: Failed to connect to " + device.getName() + " - " + e.getMessage());
+                logMessage("ERROR: Failed to connect to " + device.getName());
             });
         }
     }
+    
+    /**
+     * Starts connection quality monitoring with periodic health checks.
+     * This method creates a timer that runs every 5 seconds to check connection health.
+     */
+    private void startConnectionMonitoring() {
+        if (connectionMonitorTimer != null) {
+            connectionMonitorTimer.cancel();
+        }
+        
+        connectionMonitorTimer = new Timer("ConnectionMonitor", true);
+        connectionQualityTicks = 0;
+        
+        System.out.println("🔍 Starting connection quality monitoring...");
+        logger.info("Starting connection quality monitoring");
+        
+        TimerTask monitoringTask = new TimerTask() {
+            @Override
+            public void run() {
+                connectionQualityTicks++;
+                
+                try {
+                    // Check connection health using shared service
+                    if (audioBridgeService.isConnected()) {
+                        // Check audio flow status
+                        checkAudioFlowStatus();
+                        
+                        // Every 12 ticks (1 minute), print basic status
+                        if (connectionQualityTicks % 12 == 0) {
+                            Platform.runLater(() -> {
+                                String statusMessage = String.format(
+                                    "📊 1-min Status: %d audio packets received, %d streamed",
+                                    audioBridgeService.getAudioPacketsReceived(),
+                                    audioBridgeService.getAudioPacketsStreamed()
+                                );
+                                System.out.println(statusMessage);
+                                logMessage(statusMessage);
+                            });
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.error("Error in connection monitoring", e);
+                }
+            }
+        };
+        
+        // Run every 5 seconds
+        connectionMonitorTimer.scheduleAtFixedRate(monitoringTask, 5000, 5000);
+    }
+    
+    /**
+     * Checks the status of audio flow through the REW bridge.
+     */
+    private void checkAudioFlowStatus() {
+        // Check if we have an initialized audio system and can monitor audio
+        if (audioBridgeService.isInitialized()) {
+            // Check if the device is receiving data by monitoring packet counts
+            
+            if (connectionQualityTicks % 6 == 0) { // Every 30 seconds
+                System.out.println("🎵 REW Bridge Status: Audio system active, monitoring for audio...");
+                logger.debug("REW audio bridge is active, device: {}", audioBridgeService.getVirtualDeviceName());
+            }
+        } else {
+            if (connectionQualityTicks % 12 == 0) { // Every minute
+                System.out.println("⚠️  REW Bridge: No active audio device found");
+                logger.warn("No active audio loopback device");
+            }
+        }
+    }
+    
+    /**
+     * Stops connection quality monitoring.
+     */
+    private void stopConnectionMonitoring() {
+        if (connectionMonitorTimer != null) {
+            System.out.println("🔍 Stopping connection quality monitoring");
+            connectionMonitorTimer.cancel();
+            connectionMonitorTimer = null;
+            logger.info("Connection quality monitoring stopped");
+        }
+    }
+    
 }

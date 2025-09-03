@@ -55,7 +55,11 @@ public class RTPAudioStreamer {
     // Stream statistics
     private final AtomicLong packetsSent = new AtomicLong(0);
     private final AtomicLong bytesSent = new AtomicLong(0);
+    private final AtomicLong packetsDropped = new AtomicLong(0);
+    private final AtomicLong networkErrors = new AtomicLong(0);
     private long streamStartTime = 0;
+    private volatile long lastPacketTime = 0;
+    private volatile long lastSuccessfulSend = 0;
     
     // RTP session parameters
     private final int ssrc; // Synchronization source identifier
@@ -98,16 +102,25 @@ public class RTPAudioStreamer {
             throw new IllegalStateException("RTP streamer is already running");
         }
         
-        logger.info("Starting RTP audio streaming");
+        System.out.println("🔗 Starting RTP streaming to Pi device...");
+        System.out.printf("   Target: %s:%d%n", targetAddress.getHostAddress(), targetPort);
+        System.out.printf("   Format: %s%n", formatToString(audioFormat));
+        System.out.printf("   SSRC: 0x%08X, Payload Type: %d%n", ssrc, payloadType);
+        
+        logger.info("Starting RTP audio streaming to {}:{}", targetAddress.getHostAddress(), targetPort);
         
         isStreaming.set(true);
         streamStartTime = System.currentTimeMillis();
+        lastSuccessfulSend = streamStartTime;
         sequenceNumber.set(0);
         timestamp.set(0);
         packetsSent.set(0);
         bytesSent.set(0);
+        packetsDropped.set(0);
+        networkErrors.set(0);
         
-        logger.info("RTP audio streaming started");
+        System.out.println("✅ RTP streaming session established");
+        logger.info("RTP audio streaming started successfully");
     }
     
     /**
@@ -167,28 +180,64 @@ public class RTPAudioStreamer {
             return;
         }
         
-        // Split audio data into packets
-        int offset = 0;
-        while (offset < audioData.length) {
-            int payloadSize = Math.min(MAX_PAYLOAD_SIZE, audioData.length - offset);
+        lastPacketTime = System.currentTimeMillis();
+        
+        try {
+            // Split audio data into packets
+            int offset = 0;
+            int packetsInBurst = 0;
             
-            // Create RTP packet
-            byte[] rtpPacket = createRTPPacket(audioData, offset, payloadSize);
+            while (offset < audioData.length) {
+                int payloadSize = Math.min(MAX_PAYLOAD_SIZE, audioData.length - offset);
+                
+                // Create RTP packet
+                byte[] rtpPacket = createRTPPacket(audioData, offset, payloadSize);
+                
+                // Send packet
+                DatagramPacket packet = new DatagramPacket(
+                    rtpPacket, rtpPacket.length, targetAddress, targetPort);
+                
+                socket.send(packet);
+                
+                // Update statistics
+                packetsSent.incrementAndGet();
+                bytesSent.addAndGet(rtpPacket.length);
+                packetsInBurst++;
+                
+                // Update sequence number and timestamp
+                sequenceNumber.incrementAndGet();
+                
+                offset += payloadSize;
+            }
             
-            // Send packet
-            DatagramPacket packet = new DatagramPacket(
-                rtpPacket, rtpPacket.length, targetAddress, targetPort);
+            lastSuccessfulSend = lastPacketTime;
             
-            socket.send(packet);
+            // Log periodic status (every 1000 packets for performance)
+            long totalPackets = packetsSent.get();
+            if (totalPackets > 0 && totalPackets % 1000 == 0) {
+                double avgBitrate = getAverageBitrate();
+                System.out.printf("📊 Streaming: %d pkts sent, %.1f kbps, Pi: %s%n", 
+                    totalPackets, avgBitrate / 1000, getConnectionStatus());
+            }
             
-            // Update statistics
-            packetsSent.incrementAndGet();
-            bytesSent.addAndGet(rtpPacket.length);
+            logger.trace("Streamed {} bytes in {} packets to Pi", audioData.length, packetsInBurst);
             
-            // Update sequence number and timestamp
-            sequenceNumber.incrementAndGet();
+        } catch (IOException e) {
+            networkErrors.incrementAndGet();
+            long errorCount = networkErrors.get();
             
-            offset += payloadSize;
+            System.err.printf("❌ Network error #%d streaming to Pi %s: %s%n", 
+                errorCount, targetAddress.getHostAddress(), e.getMessage());
+            
+            logger.error("Network error #{} streaming to Pi {}: {}", 
+                errorCount, targetAddress.getHostAddress(), e.getMessage());
+            
+            // Check if we should consider the connection lost
+            if (errorCount > 10) {
+                System.err.println("⚠️  Multiple network errors detected - Pi connection may be unstable");
+            }
+            
+            throw e;
         }
         
         // Update timestamp based on audio data size
@@ -282,6 +331,65 @@ public class RTPAudioStreamer {
                            format.getSampleRate() / 1000.0,
                            format.getSampleSizeInBits(),
                            format.getChannels());
+    }
+    
+    /**
+     * Gets the connection status string.
+     * 
+     * @return Connection status description
+     */
+    private String getConnectionStatus() {
+        long now = System.currentTimeMillis();
+        long timeSinceLastSend = now - lastSuccessfulSend;
+        
+        if (timeSinceLastSend < 1000) {
+            return "GOOD";
+        } else if (timeSinceLastSend < 5000) {
+            return "SLOW";
+        } else {
+            return "DISCONNECTED";
+        }
+    }
+    
+    /**
+     * Gets the current average bitrate in bits per second.
+     * 
+     * @return Average bitrate in bps
+     */
+    public double getAverageBitrate() {
+        long duration = System.currentTimeMillis() - streamStartTime;
+        return duration > 0 ? (bytesSent.get() * 8.0 * 1000.0) / duration : 0.0;
+    }
+    
+    /**
+     * Checks connection health and logs warnings if needed.
+     * This method should be called periodically to monitor connection quality.
+     */
+    public void checkConnectionHealth() {
+        if (!isStreaming.get()) {
+            return;
+        }
+        
+        long now = System.currentTimeMillis();
+        long timeSinceLastSend = now - lastSuccessfulSend;
+        
+        if (timeSinceLastSend > 10000) { // 10 seconds without successful send
+            System.err.printf("⚠️  No data sent to Pi %s for %d seconds%n", 
+                targetAddress.getHostAddress(), timeSinceLastSend / 1000);
+            logger.warn("No successful data transmission to Pi {} for {}ms", 
+                targetAddress.getHostAddress(), timeSinceLastSend);
+        }
+        
+        long errorRate = networkErrors.get();
+        long totalPackets = packetsSent.get();
+        
+        if (totalPackets > 100 && errorRate > totalPackets * 0.05) { // More than 5% error rate
+            double errorPercent = (errorRate * 100.0) / totalPackets;
+            System.err.printf("⚠️  High error rate to Pi %s: %.1f%% (%d/%d packets)%n",
+                targetAddress.getHostAddress(), errorPercent, errorRate, totalPackets);
+            logger.warn("High error rate to Pi {}: {:.1f}% ({}/{})", 
+                targetAddress.getHostAddress(), errorPercent, errorRate, totalPackets);
+        }
     }
     
     /**

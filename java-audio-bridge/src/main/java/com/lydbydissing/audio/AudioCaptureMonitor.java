@@ -24,6 +24,9 @@ public class AudioCaptureMonitor {
     /** Buffer size for audio capture */
     private static final int BUFFER_SIZE = 4096;
     
+    /** Minimum audio level to consider as "active" audio (to ignore silence) */
+    private static final int MIN_AUDIO_LEVEL = 50;
+    
     private final String sourceName;
     private final AudioFormat audioFormat;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
@@ -31,6 +34,11 @@ public class AudioCaptureMonitor {
     private TargetDataLine targetLine;
     private Thread captureThread;
     private Consumer<byte[]> audioDataConsumer;
+    
+    // Audio flow monitoring
+    private volatile long lastAudioTime = 0;
+    private volatile long totalBytesProcessed = 0;
+    private volatile boolean hasLoggedFirstAudio = false;
     
     /**
      * Creates an audio capture monitor for the specified source.
@@ -152,13 +160,39 @@ public class AudioCaptureMonitor {
                 if (targetLine != null && targetLine.isOpen()) {
                     int bytesRead = targetLine.read(buffer, 0, buffer.length);
                     
-                    if (bytesRead > 0 && audioDataConsumer != null) {
-                        // Create a copy of the data
-                        byte[] audioData = new byte[bytesRead];
-                        System.arraycopy(buffer, 0, audioData, 0, bytesRead);
+                    if (bytesRead > 0) {
+                        totalBytesProcessed += bytesRead;
                         
-                        // Send to consumer
-                        audioDataConsumer.accept(audioData);
+                        // Check if this is actual audio data (not silence)
+                        boolean hasAudio = hasSignificantAudio(buffer, bytesRead);
+                        
+                        if (hasAudio) {
+                            lastAudioTime = System.currentTimeMillis();
+                            
+                            if (!hasLoggedFirstAudio) {
+                                System.out.println("🎵 Audio detected flowing through REW Bridge!");
+                                System.out.printf("   Source: %s%n", sourceName);
+                                System.out.printf("   Format: %s%n", formatToString(audioFormat));
+                                logger.info("First audio detected from source: {}", sourceName);
+                                hasLoggedFirstAudio = true;
+                            }
+                            
+                            // Log periodic status (every 10MB to avoid spam)
+                            if (totalBytesProcessed % (10 * 1024 * 1024) == 0) {
+                                double mbProcessed = totalBytesProcessed / (1024.0 * 1024.0);
+                                System.out.printf("📊 Audio Bridge: %.1f MB processed from %s%n", 
+                                    mbProcessed, sourceName);
+                            }
+                        }
+                        
+                        if (audioDataConsumer != null) {
+                            // Create a copy of the data
+                            byte[] audioData = new byte[bytesRead];
+                            System.arraycopy(buffer, 0, audioData, 0, bytesRead);
+                            
+                            // Send to consumer
+                            audioDataConsumer.accept(audioData);
+                        }
                     }
                 } else {
                     Thread.sleep(10);
@@ -213,10 +247,78 @@ public class AudioCaptureMonitor {
     }
     
     /**
+     * Checks if the buffer contains significant audio data (not just silence).
+     * 
+     * @param buffer The audio buffer to check
+     * @param length The number of bytes to check
+     * @return true if significant audio is detected, false otherwise
+     */
+    private boolean hasSignificantAudio(byte[] buffer, int length) {
+        // Calculate RMS level for 16-bit audio
+        long sumSquares = 0;
+        int samples = length / 2; // 16-bit = 2 bytes per sample
+        
+        for (int i = 0; i < length - 1; i += 2) {
+            // Convert bytes to 16-bit sample (little-endian)
+            int sample = (buffer[i] & 0xFF) | ((buffer[i + 1] & 0xFF) << 8);
+            if (sample > 32767) sample -= 65536; // Handle signed
+            sumSquares += sample * sample;
+        }
+        
+        if (samples == 0) return false;
+        
+        double rms = Math.sqrt((double) sumSquares / samples);
+        return rms > MIN_AUDIO_LEVEL;
+    }
+    
+    /**
+     * Converts an AudioFormat to a readable string.
+     * 
+     * @param format The audio format to convert
+     * @return A string representation of the format
+     */
+    private String formatToString(AudioFormat format) {
+        return String.format("%.1f kHz, %d-bit, %d channels", 
+                           format.getSampleRate() / 1000.0,
+                           format.getSampleSizeInBits(),
+                           format.getChannels());
+    }
+    
+    /**
+     * Gets the time of the last audio detection.
+     * 
+     * @return Timestamp of last audio, or 0 if no audio detected
+     */
+    public long getLastAudioTime() {
+        return lastAudioTime;
+    }
+    
+    /**
+     * Gets the total bytes processed.
+     * 
+     * @return Total bytes processed since start
+     */
+    public long getTotalBytesProcessed() {
+        return totalBytesProcessed;
+    }
+    
+    /**
+     * Checks if audio has been detected since start.
+     * 
+     * @return true if audio has been detected, false otherwise
+     */
+    public boolean hasDetectedAudio() {
+        return hasLoggedFirstAudio;
+    }
+    
+    /**
      * Cleans up resources.
      */
     private void cleanup() {
         targetLine = null;
         captureThread = null;
+        lastAudioTime = 0;
+        totalBytesProcessed = 0;
+        hasLoggedFirstAudio = false;
     }
 }

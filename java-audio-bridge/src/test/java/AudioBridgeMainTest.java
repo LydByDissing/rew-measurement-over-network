@@ -1,7 +1,6 @@
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.testfx.framework.junit5.ApplicationExtension;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,7 +9,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 
  * @author REW Network Project Contributors
  */
-@ExtendWith(ApplicationExtension.class)
 @DisplayName("AudioBridgeMain Tests")
 class AudioBridgeMainTest {
     

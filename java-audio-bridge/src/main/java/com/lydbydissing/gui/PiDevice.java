@@ -19,6 +19,7 @@ public class PiDevice {
     private final StringProperty name;
     private final StringProperty ipAddress;
     private final StringProperty status;
+    private final int port;
     
     /**
      * Creates a new Pi device with the specified properties.
@@ -28,9 +29,22 @@ public class PiDevice {
      * @param status    The current status of the device (e.g., "Available", "Busy", "Offline")
      */
     public PiDevice(String name, String ipAddress, String status) {
+        this(name, ipAddress, status, 5004);
+    }
+    
+    /**
+     * Creates a new Pi device with the specified properties including port.
+     * 
+     * @param name      The display name of the Pi device (e.g., "REW-Pi-01")
+     * @param ipAddress The IP address of the Pi device (e.g., "192.168.1.100")
+     * @param status    The current status of the device (e.g., "Available", "Busy", "Offline")
+     * @param port      The port number for RTP communication (default: 5004)
+     */
+    public PiDevice(String name, String ipAddress, String status, int port) {
         this.name = new SimpleStringProperty(name);
         this.ipAddress = new SimpleStringProperty(ipAddress);
         this.status = new SimpleStringProperty(status);
+        this.port = port;
     }
     
     /**
@@ -112,6 +126,27 @@ public class PiDevice {
      */
     public void setStatus(String status) {
         this.status.set(status);
+    }
+    
+    /**
+     * Gets the port number for RTP communication.
+     * 
+     * @return The port number
+     */
+    public int getPort() {
+        return port;
+    }
+    
+    /**
+     * Creates a manual Pi device with default settings.
+     * This is a convenience factory method for manually added devices.
+     * 
+     * @param name      The display name of the Pi device
+     * @param ipAddress The IP address of the Pi device
+     * @return A new PiDevice configured for manual use
+     */
+    public static PiDevice createManualDevice(String name, String ipAddress) {
+        return new PiDevice(name, ipAddress, "Manual", 5004);
     }
     
     /**
