@@ -24,11 +24,20 @@ COPY java-audio-bridge/ /app/
 COPY rew-loopback /app/rew-loopback
 COPY setup-rew-audio /app/setup-rew-audio
 
-# Build the application
-RUN mvn clean package -DskipTests
+# Verify JAR artifact was downloaded
+RUN echo "Contents of /app/target:" && ls -la /app/target/
 
 # Create audio bridge JAR symlink for easy access
-RUN ln -sf /app/target/audio-bridge-*.jar /app/audio-bridge.jar
+RUN JAR_FILE=$(find /app/target -name "audio-bridge-*.jar" -not -name "*-javadoc.jar" -not -name "*-sources.jar" | head -1) && \
+    if [ -n "$JAR_FILE" ]; then \
+        ln -sf "$JAR_FILE" /app/audio-bridge.jar && \
+        echo "Created symlink: /app/audio-bridge.jar -> $JAR_FILE"; \
+    else \
+        echo "ERROR: No JAR file found matching audio-bridge-*.jar"; \
+        echo "Available files in /app/target:"; \
+        find /app/target -name "*.jar" || echo "No JAR files found"; \
+        exit 1; \
+    fi
 
 # Create test script
 COPY <<EOF /app/test-bridge.sh
