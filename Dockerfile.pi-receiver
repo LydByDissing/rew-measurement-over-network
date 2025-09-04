@@ -1,12 +1,9 @@
 # Dockerfile for Pi Audio Receiver Test Container
 FROM python:3.12-slim
 
-# Install system dependencies
+# Install system dependencies (minimal for container testing)
 RUN apt-get update && apt-get install -y \
     alsa-utils \
-    libasound2-dev \
-    avahi-utils \
-    avahi-daemon \
     netcat-traditional \
     iputils-ping \
     curl \
@@ -15,19 +12,19 @@ RUN apt-get update && apt-get install -y \
 # Create virtual environment
 RUN python -m venv /opt/rew-venv
 
-# Install Python dependencies in virtual environment
+# Install Python dependencies in virtual environment (minimal for container testing)
 RUN /opt/rew-venv/bin/pip install --upgrade pip && \
     /opt/rew-venv/bin/pip install --no-cache-dir \
         wheel>=0.37.0 \
-        setuptools>=65.0.0 \
-        pyalsaaudio>=0.10.0 \
-        zeroconf>=0.39.0
+        setuptools>=65.0.0
+
+# Note: zeroconf and pyalsaaudio not needed for simplified container receiver
 
 # Create app directory
 WORKDIR /app
 
-# Copy Pi receiver files
-COPY pi-receiver/rew_audio_receiver.py /app/
+# Copy Pi receiver files (use simplified version for containers)
+COPY pi-receiver/rew_audio_receiver_simple.py /app/rew_audio_receiver.py
 COPY pi-receiver/requirements.txt /app/
 
 # Create ALSA configuration for null output
