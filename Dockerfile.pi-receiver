@@ -28,7 +28,7 @@ WORKDIR /app
 
 # Copy Pi receiver files
 COPY pi-receiver/rew_audio_receiver.py /app/
-COPY pi-receiver/requirements.txt /app/ 2>/dev/null || echo "# No requirements.txt found" > /app/requirements.txt
+COPY pi-receiver/requirements.txt /app/
 
 # Create ALSA configuration for null output
 RUN mkdir -p /home/root/.asoundrc.d
