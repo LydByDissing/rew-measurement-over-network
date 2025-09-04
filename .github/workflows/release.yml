@@ -208,7 +208,7 @@ jobs:
         name: docker-images
         
     - name: Upload to GitHub Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           rew-network-audio-bridge-*.tar.gz
