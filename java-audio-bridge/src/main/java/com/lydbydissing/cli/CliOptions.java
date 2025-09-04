@@ -183,7 +183,8 @@ public class CliOptions {
     
     @Override
     public String toString() {
-        return String.format("CliOptions{headless=%s, targetIp='%s', targetPort=%d, showHelp=%s, showVersion=%s, testMode=%s}",
+        return String.format("CliOptions{headless=%s, targetIp='%s', targetPort=%d, showHelp=%s, "
+                           + "showVersion=%s, testMode=%s}",
                            headless, targetIp, targetPort, showHelp, showVersion, testMode);
     }
 }

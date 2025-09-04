@@ -119,6 +119,11 @@ public class MockAudioLoopback {
     
     /**
      * Generates a simple sine wave pattern for testing.
+     * 
+     * @param buffer The buffer to fill with audio data
+     * @param startFrame The starting frame number for timing
+     * @param sampleRate The audio sample rate in Hz
+     * @param channels The number of audio channels
      */
     private void generateSineWave(byte[] buffer, long startFrame, int sampleRate, int channels) {
         int framesInBuffer = buffer.length / (channels * 2); // 16-bit = 2 bytes per sample
@@ -177,6 +182,9 @@ public class MockAudioLoopback {
     
     /**
      * Converts an AudioFormat to a human-readable string.
+     * 
+     * @param format The AudioFormat to convert
+     * @return A human-readable string representation
      */
     private String formatToString(AudioFormat format) {
         return String.format("%.1f kHz, %d-bit, %d channels",
