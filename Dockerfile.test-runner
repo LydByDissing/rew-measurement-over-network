@@ -289,7 +289,7 @@ else
 fi
 
 # Save detailed test results
-cat > "$TEST_RESULTS_DIR/test-summary.json" <<EOF
+cat > "$TEST_RESULTS_DIR/test-summary.json" <<INNER_EOF
 {
   "test_start_time": $TEST_START_TIME,
   "test_end_time": $(date +%s),
@@ -301,7 +301,7 @@ cat > "$TEST_RESULTS_DIR/test-summary.json" <<EOF
   "network": "$TEST_NETWORK",
   "overall_result": $([ $TESTS_FAILED -eq 0 ] && echo '"PASS"' || echo '"FAIL"')
 }
-EOF
+INNER_EOF
 
 echo "==============================================="
 exit $EXIT_CODE
