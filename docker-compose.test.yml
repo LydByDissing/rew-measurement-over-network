@@ -29,7 +29,7 @@ services:
         echo '🚀 Starting Java Audio Bridge Test Environment'
         echo 'Bridge IP: 192.168.100.10'
         echo 'Pi Receivers: 192.168.100.11, 192.168.100.12'
-        java -jar /app/audio-bridge.jar --headless --discover
+        java -jar /app/audio-bridge.jar --headless --target 192.168.100.11
       "
 
   # First Pi receiver (simulates Pi device #1)
