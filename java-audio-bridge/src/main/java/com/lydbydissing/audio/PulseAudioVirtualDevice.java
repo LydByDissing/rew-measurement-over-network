@@ -3,7 +3,8 @@ package com.lydbydissing.audio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.LineUnavailableException;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -30,15 +31,15 @@ import java.util.function.Consumer;
  */
 public class PulseAudioVirtualDevice {
     
-    private static final Logger logger = LoggerFactory.getLogger(PulseAudioVirtualDevice.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PulseAudioVirtualDevice.class);
     
-    /** Name of the virtual audio device */
+    /** Name of the virtual audio device. */
     public static final String DEVICE_NAME = "REW_Network_Bridge";
     
-    /** Human-readable description */
+    /** Human-readable description. */
     public static final String DEVICE_DESCRIPTION = "REW Network Audio Bridge";
     
-    /** Audio format for the virtual device */
+    /** Audio format for the virtual device. */
     public static final AudioFormat DEVICE_FORMAT = new AudioFormat(
         AudioFormat.Encoding.PCM_SIGNED,
         48000.0f,  // 48kHz sample rate
@@ -66,7 +67,7 @@ public class PulseAudioVirtualDevice {
             throw new IllegalStateException("PulseAudio virtual device is already active");
         }
         
-        logger.info("Creating PulseAudio virtual audio device: {}", DEVICE_DESCRIPTION);
+        LOGGER.info("Creating PulseAudio virtual audio device: {}", DEVICE_DESCRIPTION);
         
         if (!isPulseAudioAvailable()) {
             throw new IOException("PulseAudio is not available - cannot create virtual audio device");
@@ -86,10 +87,10 @@ public class PulseAudioVirtualDevice {
             startAudioMonitoring();
             
             isActive.set(true);
-            logger.info("PulseAudio virtual device '{}' created successfully", DEVICE_DESCRIPTION);
+            LOGGER.info("PulseAudio virtual device '{}' created successfully", DEVICE_DESCRIPTION);
             
         } catch (Exception e) {
-            logger.error("Failed to create PulseAudio virtual device", e);
+            LOGGER.error("Failed to create PulseAudio virtual device", e);
             cleanup();
             throw new IOException("Failed to create virtual audio device: " + e.getMessage(), e);
         }
@@ -100,11 +101,11 @@ public class PulseAudioVirtualDevice {
      */
     public void stop() {
         if (!isActive.get()) {
-            logger.warn("PulseAudio virtual device is not active");
+            LOGGER.warn("PulseAudio virtual device is not active");
             return;
         }
         
-        logger.info("Stopping PulseAudio virtual device");
+        LOGGER.info("Stopping PulseAudio virtual device");
         
         isActive.set(false);
         
@@ -120,12 +121,12 @@ public class PulseAudioVirtualDevice {
             removeNullSink();
             
         } catch (Exception e) {
-            logger.error("Error stopping PulseAudio virtual device", e);
+            LOGGER.error("Error stopping PulseAudio virtual device", e);
         } finally {
             cleanup();
         }
         
-        logger.info("PulseAudio virtual device stopped");
+        LOGGER.info("PulseAudio virtual device stopped");
     }
     
     /**
@@ -147,7 +148,7 @@ public class PulseAudioVirtualDevice {
         if (monitor != null) {
             monitor.setAudioDataConsumer(consumer);
         }
-        logger.debug("Audio data consumer set for virtual device");
+        LOGGER.debug("Audio data consumer set for virtual device");
     }
     
     /**
@@ -174,7 +175,7 @@ public class PulseAudioVirtualDevice {
      * @throws IOException if creation fails
      */
     private void createNullSink() throws IOException {
-        logger.debug("Creating PulseAudio null sink");
+        LOGGER.debug("Creating PulseAudio null sink");
         
         String[] command = {
             "pactl", "load-module", "module-null-sink",
@@ -187,7 +188,7 @@ public class PulseAudioVirtualDevice {
         }
         
         sinkModuleId = result.stdout.trim();
-        logger.info("Created null sink with module ID: {}", sinkModuleId);
+        LOGGER.info("Created null sink with module ID: {}", sinkModuleId);
     }
     
     /**
@@ -196,7 +197,7 @@ public class PulseAudioVirtualDevice {
      * @throws IOException if creation fails
      */
     private void createLoopback() throws IOException {
-        logger.debug("Creating loopback for audio monitoring");
+        LOGGER.debug("Creating loopback for audio monitoring");
         
         String[] command = {
             "pactl", "load-module", "module-loopback",
@@ -211,7 +212,7 @@ public class PulseAudioVirtualDevice {
         }
         
         loopbackModuleId = result.stdout.trim();
-        logger.debug("Created loopback with module ID: {}", loopbackModuleId);
+        LOGGER.debug("Created loopback with module ID: {}", loopbackModuleId);
     }
     
     /**
@@ -220,7 +221,7 @@ public class PulseAudioVirtualDevice {
      * @throws IOException if monitoring cannot be started
      */
     private void startAudioMonitoring() throws IOException {
-        logger.debug("Starting audio monitoring");
+        LOGGER.debug("Starting audio monitoring");
         
         String monitorSource = DEVICE_NAME + ".monitor";
         monitor = new AudioCaptureMonitor(monitorSource, DEVICE_FORMAT);
@@ -231,7 +232,7 @@ public class PulseAudioVirtualDevice {
         
         try {
             monitor.start();
-            logger.debug("Audio monitoring started for virtual device");
+            LOGGER.debug("Audio monitoring started for virtual device");
         } catch (LineUnavailableException e) {
             throw new IOException("Failed to start audio monitoring", e);
         }
@@ -241,21 +242,23 @@ public class PulseAudioVirtualDevice {
      * Removes the null sink.
      */
     private void removeNullSink() {
-        if (sinkModuleId == null) return;
+        if (sinkModuleId == null) {
+            return;
+        }
         
-        logger.debug("Removing null sink with module ID: {}", sinkModuleId);
+        LOGGER.debug("Removing null sink with module ID: {}", sinkModuleId);
         
         try {
             String[] command = {"pactl", "unload-module", sinkModuleId};
             ProcessResult result = runCommand(command);
             
             if (result.exitCode == 0) {
-                logger.debug("Successfully removed null sink");
+                LOGGER.debug("Successfully removed null sink");
             } else {
-                logger.warn("Failed to remove null sink: {}", result.stderr);
+                LOGGER.warn("Failed to remove null sink: {}", result.stderr);
             }
         } catch (IOException e) {
-            logger.error("Error removing null sink", e);
+            LOGGER.error("Error removing null sink", e);
         }
         
         sinkModuleId = null;
@@ -265,21 +268,23 @@ public class PulseAudioVirtualDevice {
      * Removes the loopback.
      */
     private void removeLoopback() {
-        if (loopbackModuleId == null) return;
+        if (loopbackModuleId == null) {
+            return;
+        }
         
-        logger.debug("Removing loopback with module ID: {}", loopbackModuleId);
+        LOGGER.debug("Removing loopback with module ID: {}", loopbackModuleId);
         
         try {
             String[] command = {"pactl", "unload-module", loopbackModuleId};
             ProcessResult result = runCommand(command);
             
             if (result.exitCode == 0) {
-                logger.debug("Successfully removed loopback");
+                LOGGER.debug("Successfully removed loopback");
             } else {
-                logger.warn("Failed to remove loopback: {}", result.stderr);
+                LOGGER.warn("Failed to remove loopback: {}", result.stderr);
             }
         } catch (IOException e) {
-            logger.error("Error removing loopback", e);
+            LOGGER.error("Error removing loopback", e);
         }
         
         loopbackModuleId = null;
@@ -295,7 +300,7 @@ public class PulseAudioVirtualDevice {
             ProcessResult result = runCommand(new String[]{"pactl", "info"});
             return result.exitCode == 0;
         } catch (IOException e) {
-            logger.debug("PulseAudio not available: {}", e.getMessage());
+            LOGGER.debug("PulseAudio not available: {}", e.getMessage());
             return false;
         }
     }
@@ -304,7 +309,7 @@ public class PulseAudioVirtualDevice {
      * Cleans up any existing REW devices to prevent conflicts.
      */
     private void cleanupExistingDevices() {
-        logger.debug("Cleaning up existing REW audio devices");
+        LOGGER.debug("Cleaning up existing REW audio devices");
         
         try {
             // Get list of modules that contain REW
@@ -326,15 +331,15 @@ public class PulseAudioVirtualDevice {
                                 ProcessResult unloadResult = runCommand(unloadCommand);
                                 
                                 if (unloadResult.exitCode == 0) {
-                                    logger.debug("Cleaned up existing REW module: {}", moduleId);
+                                    LOGGER.debug("Cleaned up existing REW module: {}", moduleId);
                                 } else {
-                                    logger.debug("Could not unload module {} (may be already gone): {}", 
+                                    LOGGER.debug("Could not unload module {} (may be already gone): {}", 
                                                moduleId, unloadResult.stderr);
                                 }
                                 
                             } catch (Exception e) {
                                 // Continue with other modules if one fails
-                                logger.debug("Failed to unload module {}: {}", moduleId, e.getMessage());
+                                LOGGER.debug("Failed to unload module {}: {}", moduleId, e.getMessage());
                             }
                         }
                     }
@@ -342,7 +347,7 @@ public class PulseAudioVirtualDevice {
             }
         } catch (Exception e) {
             // Don't fail the whole operation if cleanup fails
-            logger.debug("Error during device cleanup (non-critical): {}", e.getMessage());
+            LOGGER.debug("Error during device cleanup (non-critical): {}", e.getMessage());
         }
     }
 
@@ -395,9 +400,36 @@ public class PulseAudioVirtualDevice {
      * Result of running a system command.
      */
     private static class ProcessResult {
-        final int exitCode;
-        final String stdout;
-        final String stderr;
+        private final int exitCode;
+        private final String stdout;
+        private final String stderr;
+        
+        /**
+         * Gets the exit code of the process.
+         * 
+         * @return the exit code
+         */
+        public int getExitCode() {
+            return exitCode;
+        }
+        
+        /**
+         * Gets the standard output of the process.
+         * 
+         * @return the stdout as a string
+         */
+        public String getStdout() {
+            return stdout;
+        }
+        
+        /**
+         * Gets the standard error of the process.
+         * 
+         * @return the stderr as a string
+         */
+        public String getStderr() {
+            return stderr;
+        }
         
         ProcessResult(int exitCode, String stdout, String stderr) {
             this.exitCode = exitCode;

@@ -1,13 +1,31 @@
 package com.lydbydissing.audio;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.Line;
+import javax.sound.sampled.Mixer;
+import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.TargetDataLine;
 
 /**
  * Utility class to discover available audio devices and mixers.
  * This helps understand what audio interfaces Java can see.
  */
-public class AudioDeviceDiscovery {
+public final class AudioDeviceDiscovery {
     
+    /**
+     * Private constructor to prevent instantiation of this utility class.
+     */
+    private AudioDeviceDiscovery() {
+        // Utility class - no instantiation allowed
+    }
+    
+    /**
+     * Main entry point for audio device discovery.
+     * 
+     * @param args command line arguments
+     */
     public static void main(String[] args) {
         System.out.println("=== Java Audio Device Discovery ===");
         System.out.println();

@@ -5,7 +5,10 @@ import org.slf4j.LoggerFactory;
 
 import javax.sound.sampled.AudioFormat;
 import java.io.IOException;
-import java.net.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -26,21 +29,21 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class RTPAudioStreamer {
     
-    private static final Logger logger = LoggerFactory.getLogger(RTPAudioStreamer.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(RTPAudioStreamer.class);
     
-    /** RTP version (always 2) */
+    /** RTP version (always 2). */
     private static final int RTP_VERSION = 2;
     
-    /** Default RTP port for audio streaming */
+    /** Default RTP port for audio streaming. */
     public static final int DEFAULT_RTP_PORT = 5004;
     
-    /** Maximum RTP packet size (excluding headers) */
+    /** Maximum RTP packet size (excluding headers). */
     private static final int MAX_PACKET_SIZE = 1200;
     
-    /** RTP header size in bytes */
+    /** RTP header size in bytes. */
     private static final int RTP_HEADER_SIZE = 12;
     
-    /** Maximum payload size per packet */
+    /** Maximum payload size per packet. */
     private static final int MAX_PAYLOAD_SIZE = MAX_PACKET_SIZE - RTP_HEADER_SIZE;
     
     private DatagramSocket socket;
@@ -88,7 +91,7 @@ public class RTPAudioStreamer {
         // Create UDP socket
         this.socket = new DatagramSocket();
         
-        logger.info("Created RTP streamer for {}:{} with format: {}", 
+        LOGGER.info("Created RTP streamer for {}:{} with format: {}", 
                    targetAddress.getHostAddress(), targetPort, formatToString(audioFormat));
     }
     
@@ -107,7 +110,7 @@ public class RTPAudioStreamer {
         System.out.printf("   Format: %s%n", formatToString(audioFormat));
         System.out.printf("   SSRC: 0x%08X, Payload Type: %d%n", ssrc, payloadType);
         
-        logger.info("Starting RTP audio streaming to {}:{}", targetAddress.getHostAddress(), targetPort);
+        LOGGER.info("Starting RTP audio streaming to {}:{}", targetAddress.getHostAddress(), targetPort);
         
         isStreaming.set(true);
         streamStartTime = System.currentTimeMillis();
@@ -120,7 +123,7 @@ public class RTPAudioStreamer {
         networkErrors.set(0);
         
         System.out.println("✅ RTP streaming session established");
-        logger.info("RTP audio streaming started successfully");
+        LOGGER.info("RTP audio streaming started successfully");
     }
     
     /**
@@ -128,17 +131,17 @@ public class RTPAudioStreamer {
      */
     public void stopStreaming() {
         if (!isStreaming.get()) {
-            logger.warn("RTP streamer is not running");
+            LOGGER.warn("RTP streamer is not running");
             return;
         }
         
-        logger.info("Stopping RTP audio streaming");
+        LOGGER.info("Stopping RTP audio streaming");
         
         isStreaming.set(false);
         
         // Log final statistics
         long duration = System.currentTimeMillis() - streamStartTime;
-        logger.info("RTP streaming stopped. Duration: {}ms, Packets: {}, Bytes: {}", 
+        LOGGER.info("RTP streaming stopped. Duration: {}ms, Packets: {}, Bytes: {}", 
                    duration, packetsSent.get(), bytesSent.get());
     }
     
@@ -150,7 +153,7 @@ public class RTPAudioStreamer {
         
         if (socket != null && !socket.isClosed()) {
             socket.close();
-            logger.debug("RTP socket closed");
+            LOGGER.debug("RTP socket closed");
         }
     }
     
@@ -220,7 +223,7 @@ public class RTPAudioStreamer {
                     totalPackets, avgBitrate / 1000, getConnectionStatus());
             }
             
-            logger.trace("Streamed {} bytes in {} packets to Pi", audioData.length, packetsInBurst);
+            LOGGER.trace("Streamed {} bytes in {} packets to Pi", audioData.length, packetsInBurst);
             
         } catch (IOException e) {
             networkErrors.incrementAndGet();
@@ -229,7 +232,7 @@ public class RTPAudioStreamer {
             System.err.printf("❌ Network error #%d streaming to Pi %s: %s%n", 
                 errorCount, targetAddress.getHostAddress(), e.getMessage());
             
-            logger.error("Network error #{} streaming to Pi {}: {}", 
+            LOGGER.error("Network error #{} streaming to Pi {}: {}", 
                 errorCount, targetAddress.getHostAddress(), e.getMessage());
             
             // Check if we should consider the connection lost
@@ -376,7 +379,7 @@ public class RTPAudioStreamer {
         if (timeSinceLastSend > 10000) { // 10 seconds without successful send
             System.err.printf("⚠️  No data sent to Pi %s for %d seconds%n", 
                 targetAddress.getHostAddress(), timeSinceLastSend / 1000);
-            logger.warn("No successful data transmission to Pi {} for {}ms", 
+            LOGGER.warn("No successful data transmission to Pi {} for {}ms", 
                 targetAddress.getHostAddress(), timeSinceLastSend);
         }
         
@@ -387,7 +390,7 @@ public class RTPAudioStreamer {
             double errorPercent = (errorRate * 100.0) / totalPackets;
             System.err.printf("⚠️  High error rate to Pi %s: %.1f%% (%d/%d packets)%n",
                 targetAddress.getHostAddress(), errorPercent, errorRate, totalPackets);
-            logger.warn("High error rate to Pi {}: {:.1f}% ({}/{})", 
+            LOGGER.warn("High error rate to Pi {}: {:.1f}% ({}/{})", 
                 targetAddress.getHostAddress(), errorPercent, errorRate, totalPackets);
         }
     }

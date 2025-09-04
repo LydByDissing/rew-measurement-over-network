@@ -9,10 +9,18 @@ import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
-import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Priority;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +44,7 @@ import java.util.TimerTask;
  */
 public class MainController implements Initializable {
     
-    private static final Logger logger = LoggerFactory.getLogger(MainController.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(MainController.class);
     
     // FXML Components - Device Discovery
     @FXML
@@ -92,7 +100,7 @@ public class MainController implements Initializable {
      */
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        logger.info("Initializing main controller");
+        LOGGER.info("Initializing main controller");
         
         setupDeviceTable();
         setupButtonStates();
@@ -114,7 +122,7 @@ public class MainController implements Initializable {
             }
         }, 0, 100); // Update every 100ms
         
-        logger.info("Main controller initialized successfully");
+        LOGGER.info("Main controller initialized successfully");
     }
     
     /**
@@ -132,7 +140,7 @@ public class MainController implements Initializable {
             (observable, oldValue, newValue) -> updateButtonStates(newValue)
         );
         
-        logger.debug("Device table configured");
+        LOGGER.debug("Device table configured");
     }
     
     /**
@@ -143,7 +151,7 @@ public class MainController implements Initializable {
         disconnectButton.setDisable(true);
         refreshButton.setDisable(false);
         
-        logger.debug("Button states initialized");
+        LOGGER.debug("Button states initialized");
     }
     
     /**
@@ -154,7 +162,7 @@ public class MainController implements Initializable {
         audioStatusLabel.setText("No audio");
         audioLevelIndicator.setProgress(0.0);
         
-        logger.debug("Status display initialized");
+        LOGGER.debug("Status display initialized");
     }
     
     /**
@@ -167,9 +175,9 @@ public class MainController implements Initializable {
         boolean deviceAvailable = deviceSelected && "Available".equals(selectedDevice.getStatus());
         
         connectButton.setDisable(!deviceAvailable);
-        // TODO: Update disconnect button based on actual connection state
+        // Disconnect button state will be updated based on actual connection state in future versions
         
-        logger.debug("Button states updated for device: {}", 
+        LOGGER.debug("Button states updated for device: {}", 
                     selectedDevice != null ? selectedDevice.getName() : "none");
     }
     
@@ -177,7 +185,7 @@ public class MainController implements Initializable {
      * Starts the Pi device discovery process using mDNS.
      */
     private void startDeviceDiscovery() {
-        logger.info("Starting device discovery");
+        LOGGER.info("Starting device discovery");
         
         try {
             // Set up listeners for device discovery
@@ -200,7 +208,7 @@ public class MainController implements Initializable {
             logMessage("Device discovery started - scanning for Pi devices...");
             
         } catch (IOException e) {
-            logger.error("Failed to start device discovery", e);
+            LOGGER.error("Failed to start device discovery", e);
             logMessage("ERROR: Failed to start device discovery - " + e.getMessage());
         }
     }
@@ -209,7 +217,7 @@ public class MainController implements Initializable {
      * Initializes the audio system using shared AudioBridgeService.
      */
     private void initializeAudioSystem() {
-        logger.info("Initializing audio system");
+        LOGGER.info("Initializing audio system");
         
         // Set up callbacks for status updates
         audioBridgeService.setOnAudioSystemInitialized(() -> {
@@ -251,7 +259,7 @@ public class MainController implements Initializable {
             return;
         }
         
-        logger.info("Connecting to device: {}", selectedDevice.getName());
+        LOGGER.info("Connecting to device: {}", selectedDevice.getName());
         logMessage("Connecting to " + selectedDevice.getName() + " (" + selectedDevice.getIpAddress() + ")");
         
         // Set up callbacks for connection events
@@ -282,7 +290,7 @@ public class MainController implements Initializable {
      */
     @FXML
     private void handleDisconnect() {
-        logger.info("Disconnecting from current device");
+        LOGGER.info("Disconnecting from current device");
         logMessage("Disconnecting from device");
         
         // Set up callback for disconnection
@@ -307,7 +315,7 @@ public class MainController implements Initializable {
      */
     @FXML
     private void handleRefresh() {
-        logger.info("Refreshing device discovery");
+        LOGGER.info("Refreshing device discovery");
         logMessage("Refreshing device discovery...");
         
         // Clear existing devices and refresh discovery
@@ -326,7 +334,7 @@ public class MainController implements Initializable {
      */
     @FXML
     private void handleAddDevice() {
-        logger.info("Opening add device dialog");
+        LOGGER.info("Opening add device dialog");
         
         // Create custom dialog
         Dialog<PiDevice> dialog = new Dialog<>();
@@ -400,7 +408,7 @@ public class MainController implements Initializable {
             // Add device to list
             discoveredDevices.add(device);
             logMessage("Manually added device: " + device.getName() + " (" + device.getIpAddress() + ")");
-            logger.info("Added manual device: {} at {}", device.getName(), device.getIpAddress());
+            LOGGER.info("Added manual device: {} at {}", device.getName(), device.getIpAddress());
             
             // Select the newly added device
             deviceTable.getSelectionModel().select(device);
@@ -506,7 +514,7 @@ public class MainController implements Initializable {
      * Stops the discovery service and releases resources.
      */
     public void cleanup() {
-        logger.info("Cleaning up main controller resources");
+        LOGGER.info("Cleaning up main controller resources");
         
         // Shutdown audio bridge service
         audioBridgeService.shutdown();
@@ -519,7 +527,7 @@ public class MainController implements Initializable {
         // Stop connection monitoring
         stopConnectionMonitoring();
         
-        logger.info("Main controller cleanup complete");
+        LOGGER.info("Main controller cleanup complete");
     }
     
     /**
@@ -531,7 +539,7 @@ public class MainController implements Initializable {
     public void setAutoConnectTarget(String ip, int port) {
         this.autoConnectIp = ip;
         this.autoConnectPort = port;
-        logger.info("Auto-connect target set: {}:{}", ip, port);
+        LOGGER.info("Auto-connect target set: {}:{}", ip, port);
     }
     
     /**
@@ -540,10 +548,10 @@ public class MainController implements Initializable {
      */
     public void triggerAutoConnect() {
         if (autoConnectIp != null) {
-            logger.info("Triggering auto-connect to {}:{}", autoConnectIp, autoConnectPort);
+            LOGGER.info("Triggering auto-connect to {}:{}", autoConnectIp, autoConnectPort);
             performAutoConnect();
         } else {
-            logger.debug("No auto-connect target configured");
+            LOGGER.debug("No auto-connect target configured");
         }
     }
     
@@ -556,7 +564,7 @@ public class MainController implements Initializable {
      */
     public boolean addManualDevice(String name, String ip) {
         try {
-            logger.info("Adding manual device programmatically: {} at {}", name, ip);
+            LOGGER.info("Adding manual device programmatically: {} at {}", name, ip);
             
             // Create a manual Pi device
             PiDevice device = PiDevice.createManualDevice(name, ip);
@@ -564,7 +572,7 @@ public class MainController implements Initializable {
             // Add to the discovered devices list
             Platform.runLater(() -> {
                 discoveredDevices.add(device);
-                logger.info("Added manual device: {} at {}", device.getName(), device.getIpAddress());
+                LOGGER.info("Added manual device: {} at {}", device.getName(), device.getIpAddress());
                 
                 // Select the newly added device
                 deviceTable.getSelectionModel().select(device);
@@ -573,7 +581,7 @@ public class MainController implements Initializable {
             return true;
             
         } catch (Exception e) {
-            logger.error("Failed to add manual device: {} at {}", name, ip, e);
+            LOGGER.error("Failed to add manual device: {} at {}", name, ip, e);
             return false;
         }
     }
@@ -582,7 +590,7 @@ public class MainController implements Initializable {
      * Performs automatic connection to the CLI-specified device.
      */
     private void performAutoConnect() {
-        logger.info("Performing auto-connect to {}:{}", autoConnectIp, autoConnectPort);
+        LOGGER.info("Performing auto-connect to {}:{}", autoConnectIp, autoConnectPort);
         
         Platform.runLater(() -> {
             logMessage("Auto-connecting to " + autoConnectIp + ":" + autoConnectPort + " (from CLI arguments)");
@@ -619,7 +627,7 @@ public class MainController implements Initializable {
      * @param port The port to use for RTP streaming
      */
     private void connectToDevice(PiDevice device, int port) {
-        logger.info("Connecting to device: {} at {}:{}", device.getName(), device.getIpAddress(), port);
+        LOGGER.info("Connecting to device: {} at {}:{}", device.getName(), device.getIpAddress(), port);
         logMessage("Connecting to " + device.getName() + " (" + device.getIpAddress() + ":" + port + ")");
         
         // Set up callbacks for connection events
@@ -657,7 +665,7 @@ public class MainController implements Initializable {
         connectionQualityTicks = 0;
         
         System.out.println("🔍 Starting connection quality monitoring...");
-        logger.info("Starting connection quality monitoring");
+        LOGGER.info("Starting connection quality monitoring");
         
         TimerTask monitoringTask = new TimerTask() {
             @Override
@@ -684,7 +692,7 @@ public class MainController implements Initializable {
                         }
                     }
                 } catch (Exception e) {
-                    logger.error("Error in connection monitoring", e);
+                    LOGGER.error("Error in connection monitoring", e);
                 }
             }
         };
@@ -703,12 +711,12 @@ public class MainController implements Initializable {
             
             if (connectionQualityTicks % 6 == 0) { // Every 30 seconds
                 System.out.println("🎵 REW Bridge Status: Audio system active, monitoring for audio...");
-                logger.debug("REW audio bridge is active, device: {}", audioBridgeService.getVirtualDeviceName());
+                LOGGER.debug("REW audio bridge is active, device: {}", audioBridgeService.getVirtualDeviceName());
             }
         } else {
             if (connectionQualityTicks % 12 == 0) { // Every minute
                 System.out.println("⚠️  REW Bridge: No active audio device found");
-                logger.warn("No active audio loopback device");
+                LOGGER.warn("No active audio loopback device");
             }
         }
     }
@@ -721,7 +729,7 @@ public class MainController implements Initializable {
             System.out.println("🔍 Stopping connection quality monitoring");
             connectionMonitorTimer.cancel();
             connectionMonitorTimer = null;
-            logger.info("Connection quality monitoring stopped");
+            LOGGER.info("Connection quality monitoring stopped");
         }
     }
     

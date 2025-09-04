@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  */
 public class AudioBridgeMain extends Application {
     
-    private static final Logger logger = LoggerFactory.getLogger(AudioBridgeMain.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(AudioBridgeMain.class);
     private static CliOptions cliOptions;
     private MainController mainController;
     
@@ -43,12 +43,12 @@ public class AudioBridgeMain extends Application {
         System.setProperty("prism.text", "t2k");
         System.setProperty("java2d.opengl", "false");
         
-        logger.info("Starting REW Network Audio Bridge v{}", getVersion());
+        LOGGER.info("Starting REW Network Audio Bridge v{}", getVersion());
         
         try {
             // Parse CLI arguments
             cliOptions = CliOptions.parse(args);
-            logger.debug("CLI options: {}", cliOptions);
+            LOGGER.debug("CLI options: {}", cliOptions);
             
             // Handle special options first
             if (cliOptions.isShowHelp()) {
@@ -76,7 +76,7 @@ public class AudioBridgeMain extends Application {
             CliOptions.printUsage();
             System.exit(1);
         } catch (Exception e) {
-            logger.error("Fatal error during startup", e);
+            LOGGER.error("Fatal error during startup", e);
             System.err.println("Fatal error: " + e.getMessage());
             System.exit(1);
         }
@@ -90,7 +90,7 @@ public class AudioBridgeMain extends Application {
             HeadlessRunner runner = new HeadlessRunner(cliOptions);
             runner.run();
         } catch (Exception e) {
-            logger.error("Error in headless mode", e);
+            LOGGER.error("Error in headless mode", e);
             System.err.println("Headless mode error: " + e.getMessage());
             System.exit(1);
         }
@@ -105,7 +105,7 @@ public class AudioBridgeMain extends Application {
      */
     @Override
     public void start(Stage primaryStage) throws Exception {
-        logger.info("Initializing JavaFX application");
+        LOGGER.info("Initializing JavaFX application");
         
         try {
             // Load FXML
@@ -148,10 +148,10 @@ public class AudioBridgeMain extends Application {
                 
             }
             
-            logger.info("Application started successfully");
+            LOGGER.info("Application started successfully");
             
         } catch (Exception e) {
-            logger.error("Failed to start application", e);
+            LOGGER.error("Failed to start application", e);
             throw e;
         }
     }
@@ -164,19 +164,19 @@ public class AudioBridgeMain extends Application {
      */
     @Override
     public void stop() throws Exception {
-        logger.info("Shutting down REW Network Audio Bridge");
+        LOGGER.info("Shutting down REW Network Audio Bridge");
         
         // Cleanup controller resources (including discovery service)
         if (mainController != null) {
             mainController.cleanup();
         }
         
-        // TODO: Cleanup network connections
-        // TODO: Stop audio streaming
-        // TODO: Release audio resources
+        // Network connections cleanup will be implemented in future versions
+        // Audio streaming shutdown will be implemented in future versions
+        // Audio resource cleanup will be implemented in future versions
         
         super.stop();
-        logger.info("Application shutdown complete");
+        LOGGER.info("Application shutdown complete");
     }
     
     /**
@@ -185,7 +185,7 @@ public class AudioBridgeMain extends Application {
      * @return application version string
      */
     private static String getVersion() {
-        // TODO: Read version from manifest or properties file
+        // Version reading from manifest or properties file will be implemented in future versions
         return "0.1.0-SNAPSHOT";
     }
 }

@@ -3,7 +3,12 @@ package com.lydbydissing.audio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.Mixer;
+import javax.sound.sampled.TargetDataLine;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -19,12 +24,12 @@ import java.util.function.Consumer;
  */
 public class AudioCaptureMonitor {
     
-    private static final Logger logger = LoggerFactory.getLogger(AudioCaptureMonitor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(AudioCaptureMonitor.class);
     
-    /** Buffer size for audio capture */
+    /** Buffer size for audio capture. */
     private static final int BUFFER_SIZE = 4096;
     
-    /** Minimum audio level to consider as "active" audio (to ignore silence) */
+    /** Minimum audio level to consider as "active" audio (to ignore silence). */
     private static final int MIN_AUDIO_LEVEL = 50;
     
     private final String sourceName;
@@ -49,7 +54,7 @@ public class AudioCaptureMonitor {
     public AudioCaptureMonitor(String sourceName, AudioFormat audioFormat) {
         this.sourceName = sourceName;
         this.audioFormat = audioFormat;
-        logger.debug("Created audio capture monitor for source: {}", sourceName);
+        LOGGER.debug("Created audio capture monitor for source: {}", sourceName);
     }
     
     /**
@@ -63,7 +68,7 @@ public class AudioCaptureMonitor {
             throw new IllegalStateException("Audio capture monitor is already running");
         }
         
-        logger.info("Starting audio capture from source: {}", sourceName);
+        LOGGER.info("Starting audio capture from source: {}", sourceName);
         
         try {
             // Try to get a specific mixer for the PulseAudio source
@@ -73,11 +78,11 @@ public class AudioCaptureMonitor {
             
             if (mixer != null) {
                 targetLine = (TargetDataLine) mixer.getLine(lineInfo);
-                logger.debug("Using specific mixer for source: {}", sourceName);
+                LOGGER.debug("Using specific mixer for source: {}", sourceName);
             } else {
                 // Fall back to default line
                 targetLine = (TargetDataLine) AudioSystem.getLine(lineInfo);
-                logger.debug("Using default audio line (PulseAudio source not found)");
+                LOGGER.debug("Using default audio line (PulseAudio source not found)");
             }
             
             targetLine.open(audioFormat, BUFFER_SIZE);
@@ -88,10 +93,10 @@ public class AudioCaptureMonitor {
             isRunning.set(true);
             captureThread.start();
             
-            logger.info("Audio capture started for source: {}", sourceName);
+            LOGGER.info("Audio capture started for source: {}", sourceName);
             
         } catch (LineUnavailableException e) {
-            logger.error("Failed to start audio capture for source: {}", sourceName, e);
+            LOGGER.error("Failed to start audio capture for source: {}", sourceName, e);
             cleanup();
             throw e;
         }
@@ -102,11 +107,11 @@ public class AudioCaptureMonitor {
      */
     public void stop() {
         if (!isRunning.get()) {
-            logger.debug("Audio capture monitor is not running");
+            LOGGER.debug("Audio capture monitor is not running");
             return;
         }
         
-        logger.info("Stopping audio capture for source: {}", sourceName);
+        LOGGER.info("Stopping audio capture for source: {}", sourceName);
         
         isRunning.set(false);
         
@@ -121,12 +126,12 @@ public class AudioCaptureMonitor {
                 captureThread.join(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.warn("Interrupted while stopping capture thread");
+                LOGGER.warn("Interrupted while stopping capture thread");
             }
         }
         
         cleanup();
-        logger.info("Audio capture stopped for source: {}", sourceName);
+        LOGGER.info("Audio capture stopped for source: {}", sourceName);
     }
     
     /**
@@ -136,7 +141,7 @@ public class AudioCaptureMonitor {
      */
     public void setAudioDataConsumer(Consumer<byte[]> consumer) {
         this.audioDataConsumer = consumer;
-        logger.debug("Audio data consumer set for monitor");
+        LOGGER.debug("Audio data consumer set for monitor");
     }
     
     /**
@@ -152,7 +157,7 @@ public class AudioCaptureMonitor {
      * Main capture loop running in a separate thread.
      */
     private void captureLoop() {
-        logger.debug("Audio capture loop started for source: {}", sourceName);
+        LOGGER.debug("Audio capture loop started for source: {}", sourceName);
         byte[] buffer = new byte[BUFFER_SIZE];
         
         while (isRunning.get() && !Thread.currentThread().isInterrupted()) {
@@ -173,7 +178,7 @@ public class AudioCaptureMonitor {
                                 System.out.println("🎵 Audio detected flowing through REW Bridge!");
                                 System.out.printf("   Source: %s%n", sourceName);
                                 System.out.printf("   Format: %s%n", formatToString(audioFormat));
-                                logger.info("First audio detected from source: {}", sourceName);
+                                LOGGER.info("First audio detected from source: {}", sourceName);
                                 hasLoggedFirstAudio = true;
                             }
                             
@@ -202,12 +207,12 @@ public class AudioCaptureMonitor {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.error("Error in audio capture loop for source: {}", sourceName, e);
+                LOGGER.error("Error in audio capture loop for source: {}", sourceName, e);
                 break;
             }
         }
         
-        logger.debug("Audio capture loop ended for source: {}", sourceName);
+        LOGGER.debug("Audio capture loop ended for source: {}", sourceName);
     }
     
     /**
@@ -220,7 +225,7 @@ public class AudioCaptureMonitor {
         Mixer.Info[] mixerInfos = AudioSystem.getMixerInfo();
         
         for (Mixer.Info mixerInfo : mixerInfos) {
-            logger.debug("Checking mixer: {} - {}", mixerInfo.getName(), mixerInfo.getDescription());
+            LOGGER.debug("Checking mixer: {} - {}", mixerInfo.getName(), mixerInfo.getDescription());
             
             // Look for PulseAudio mixers that might match our source
             if (mixerInfo.getName().toLowerCase().contains("pulse") ||
@@ -232,17 +237,17 @@ public class AudioCaptureMonitor {
                     // Check if this mixer supports target data lines
                     DataLine.Info lineInfo = new DataLine.Info(TargetDataLine.class, audioFormat);
                     if (mixer.isLineSupported(lineInfo)) {
-                        logger.debug("Found compatible PulseAudio mixer: {}", mixerInfo.getName());
+                        LOGGER.debug("Found compatible PulseAudio mixer: {}", mixerInfo.getName());
                         return mixer;
                     }
                     
                 } catch (Exception e) {
-                    logger.debug("Error checking mixer {}: {}", mixerInfo.getName(), e.getMessage());
+                    LOGGER.debug("Error checking mixer {}: {}", mixerInfo.getName(), e.getMessage());
                 }
             }
         }
         
-        logger.debug("No specific PulseAudio mixer found for source: {}", sourceName);
+        LOGGER.debug("No specific PulseAudio mixer found for source: {}", sourceName);
         return null;
     }
     
@@ -261,11 +266,15 @@ public class AudioCaptureMonitor {
         for (int i = 0; i < length - 1; i += 2) {
             // Convert bytes to 16-bit sample (little-endian)
             int sample = (buffer[i] & 0xFF) | ((buffer[i + 1] & 0xFF) << 8);
-            if (sample > 32767) sample -= 65536; // Handle signed
+            if (sample > 32767) {
+                sample -= 65536; // Handle signed
+            }
             sumSquares += sample * sample;
         }
         
-        if (samples == 0) return false;
+        if (samples == 0) {
+            return false;
+        }
         
         double rms = Math.sqrt((double) sumSquares / samples);
         return rms > MIN_AUDIO_LEVEL;

@@ -3,7 +3,11 @@ package com.lydbydissing.audio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.TargetDataLine;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,9 +30,9 @@ import java.util.function.Consumer;
  */
 public class VirtualAudioDevice {
     
-    private static final Logger logger = LoggerFactory.getLogger(VirtualAudioDevice.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(VirtualAudioDevice.class);
     
-    /** Default audio format: 48kHz, 16-bit, stereo */
+    /** Default audio format: 48kHz, 16-bit, stereo. */
     public static final AudioFormat DEFAULT_FORMAT = new AudioFormat(
         AudioFormat.Encoding.PCM_SIGNED,
         48000.0f,  // Sample rate
@@ -39,10 +43,10 @@ public class VirtualAudioDevice {
         false      // Little endian
     );
     
-    /** Buffer size for audio capture in bytes */
+    /** Buffer size for audio capture in bytes. */
     private static final int BUFFER_SIZE = 4096;
     
-    /** Queue size for audio data buffering */
+    /** Queue size for audio data buffering. */
     private static final int QUEUE_SIZE = 100;
     
     private TargetDataLine targetLine;
@@ -75,7 +79,7 @@ public class VirtualAudioDevice {
      */
     public VirtualAudioDevice(AudioFormat audioFormat) {
         this.audioFormat = audioFormat;
-        logger.info("Created virtual audio device with format: {}", formatToString(audioFormat));
+        LOGGER.info("Created virtual audio device with format: {}", formatToString(audioFormat));
     }
     
     /**
@@ -90,7 +94,7 @@ public class VirtualAudioDevice {
             throw new IllegalStateException("Virtual audio device is already running");
         }
         
-        logger.info("Starting virtual audio device");
+        LOGGER.info("Starting virtual audio device");
         
         try {
             // Get and open the target data line
@@ -112,10 +116,10 @@ public class VirtualAudioDevice {
             targetLine.start();
             isCapturing.set(true);
             
-            logger.info("Virtual audio device started successfully");
+            LOGGER.info("Virtual audio device started successfully");
             
         } catch (LineUnavailableException e) {
-            logger.error("Failed to start virtual audio device", e);
+            LOGGER.error("Failed to start virtual audio device", e);
             cleanup();
             throw e;
         }
@@ -127,11 +131,11 @@ public class VirtualAudioDevice {
      */
     public void stop() {
         if (!isRunning.get()) {
-            logger.warn("Virtual audio device is not running");
+            LOGGER.warn("Virtual audio device is not running");
             return;
         }
         
-        logger.info("Stopping virtual audio device");
+        LOGGER.info("Stopping virtual audio device");
         
         isCapturing.set(false);
         isRunning.set(false);
@@ -149,12 +153,12 @@ public class VirtualAudioDevice {
                 captureThread.join(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.warn("Interrupted while stopping capture thread");
+                LOGGER.warn("Interrupted while stopping capture thread");
             }
         }
         
         cleanup();
-        logger.info("Virtual audio device stopped");
+        LOGGER.info("Virtual audio device stopped");
     }
     
     /**
@@ -201,7 +205,7 @@ public class VirtualAudioDevice {
      */
     public void setAudioDataConsumer(Consumer<byte[]> consumer) {
         this.audioDataConsumer = consumer;
-        logger.debug("Audio data consumer set");
+        LOGGER.debug("Audio data consumer set");
     }
     
     /**
@@ -212,14 +216,14 @@ public class VirtualAudioDevice {
      */
     public void setAudioLevelConsumer(Consumer<Double> consumer) {
         this.audioLevelConsumer = consumer;
-        logger.debug("Audio level consumer set");
+        LOGGER.debug("Audio level consumer set");
     }
     
     /**
      * Main audio capture loop running in a separate thread.
      */
     private void captureLoop() {
-        logger.debug("Audio capture loop started");
+        LOGGER.debug("Audio capture loop started");
         byte[] buffer = new byte[BUFFER_SIZE];
         
         while (isRunning.get()) {
@@ -238,7 +242,7 @@ public class VirtualAudioDevice {
                         // Queue audio data for consumption
                         if (audioDataConsumer != null) {
                             if (!audioDataQueue.offer(audioData)) {
-                                logger.warn("Audio data queue is full, dropping data");
+                                LOGGER.warn("Audio data queue is full, dropping data");
                             }
                         }
                         
@@ -255,12 +259,12 @@ public class VirtualAudioDevice {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.error("Error in audio capture loop", e);
+                LOGGER.error("Error in audio capture loop", e);
                 break;
             }
         }
         
-        logger.debug("Audio capture loop ended");
+        LOGGER.debug("Audio capture loop ended");
     }
     
     /**
@@ -276,7 +280,7 @@ public class VirtualAudioDevice {
             try {
                 audioDataConsumer.accept(audioData);
             } catch (Exception e) {
-                logger.error("Error processing audio data", e);
+                LOGGER.error("Error processing audio data", e);
                 break;
             }
         }
@@ -312,7 +316,7 @@ public class VirtualAudioDevice {
             try {
                 audioLevelConsumer.accept(currentAudioLevel);
             } catch (Exception e) {
-                logger.error("Error notifying audio level consumer", e);
+                LOGGER.error("Error notifying audio level consumer", e);
             }
         }
         

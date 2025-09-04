@@ -3,7 +3,14 @@ package com.lydbydissing.audio;
 /**
  * Simple test to verify the JavaAudioLoopback works correctly.
  */
-public class AudioLoopbackTest {
+public final class AudioLoopbackTest {
+    
+    /**
+     * Private constructor to prevent instantiation.
+     */
+    private AudioLoopbackTest() {
+        // Utility class
+    }
     
     public static void main(String[] args) {
         System.out.println("=== Java Audio Loopback Test ===");

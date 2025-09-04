@@ -29,12 +29,12 @@ import java.util.function.Consumer;
  */
 public class PiDiscoveryService {
     
-    private static final Logger logger = LoggerFactory.getLogger(PiDiscoveryService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PiDiscoveryService.class);
     
-    /** The mDNS service type to discover */
+    /** The mDNS service type to discover. */
     private static final String SERVICE_TYPE = "_rew-audio._tcp.local.";
     
-    /** Timeout for mDNS operations in milliseconds */
+    /** Timeout for mDNS operations in milliseconds. */
     private static final int MDNS_TIMEOUT = 5000;
     
     private JmDNS jmdns;
@@ -53,11 +53,11 @@ public class PiDiscoveryService {
      */
     public void startDiscovery() throws IOException {
         if (isRunning) {
-            logger.warn("Discovery service is already running");
+            LOGGER.warn("Discovery service is already running");
             return;
         }
         
-        logger.info("Starting Pi discovery service");
+        LOGGER.info("Starting Pi discovery service");
         
         try {
             // Initialize JmDNS
@@ -67,10 +67,10 @@ public class PiDiscoveryService {
             jmdns.addServiceListener(SERVICE_TYPE, new REWServiceListener());
             
             isRunning = true;
-            logger.info("Pi discovery service started successfully");
+            LOGGER.info("Pi discovery service started successfully");
             
         } catch (IOException e) {
-            logger.error("Failed to start Pi discovery service", e);
+            LOGGER.error("Failed to start Pi discovery service", e);
             throw e;
         }
     }
@@ -81,11 +81,11 @@ public class PiDiscoveryService {
      */
     public void stopDiscovery() {
         if (!isRunning) {
-            logger.warn("Discovery service is not running");
+            LOGGER.warn("Discovery service is not running");
             return;
         }
         
-        logger.info("Stopping Pi discovery service");
+        LOGGER.info("Stopping Pi discovery service");
         
         try {
             if (jmdns != null) {
@@ -97,10 +97,10 @@ public class PiDiscoveryService {
             discoveredDevices.clear();
             isRunning = false;
             
-            logger.info("Pi discovery service stopped");
+            LOGGER.info("Pi discovery service stopped");
             
         } catch (IOException e) {
-            logger.error("Error stopping Pi discovery service", e);
+            LOGGER.error("Error stopping Pi discovery service", e);
         }
     }
     
@@ -129,7 +129,7 @@ public class PiDiscoveryService {
      */
     public void addDeviceAddedListener(Consumer<PiDevice> listener) {
         deviceAddedListeners.add(listener);
-        logger.debug("Added device added listener");
+        LOGGER.debug("Added device added listener");
     }
     
     /**
@@ -139,7 +139,7 @@ public class PiDiscoveryService {
      */
     public void removeDeviceAddedListener(Consumer<PiDevice> listener) {
         deviceAddedListeners.remove(listener);
-        logger.debug("Removed device added listener");
+        LOGGER.debug("Removed device added listener");
     }
     
     /**
@@ -149,7 +149,7 @@ public class PiDiscoveryService {
      */
     public void addDeviceRemovedListener(Consumer<PiDevice> listener) {
         deviceRemovedListeners.add(listener);
-        logger.debug("Added device removed listener");
+        LOGGER.debug("Added device removed listener");
     }
     
     /**
@@ -159,7 +159,7 @@ public class PiDiscoveryService {
      */
     public void removeDeviceRemovedListener(Consumer<PiDevice> listener) {
         deviceRemovedListeners.remove(listener);
-        logger.debug("Removed device removed listener");
+        LOGGER.debug("Removed device removed listener");
     }
     
     /**
@@ -168,18 +168,18 @@ public class PiDiscoveryService {
      */
     public void refreshDiscovery() {
         if (!isRunning) {
-            logger.warn("Cannot refresh - discovery service is not running");
+            LOGGER.warn("Cannot refresh - discovery service is not running");
             return;
         }
         
-        logger.info("Refreshing Pi device discovery");
+        LOGGER.info("Refreshing Pi device discovery");
         
         try {
             // Request service info for all known services
             jmdns.requestServiceInfo(SERVICE_TYPE, null, MDNS_TIMEOUT);
             
         } catch (Exception e) {
-            logger.error("Error refreshing discovery", e);
+            LOGGER.error("Error refreshing discovery", e);
         }
     }
     
@@ -193,7 +193,7 @@ public class PiDiscoveryService {
             try {
                 listener.accept(device);
             } catch (Exception e) {
-                logger.error("Error notifying device added listener", e);
+                LOGGER.error("Error notifying device added listener", e);
             }
         }
     }
@@ -208,7 +208,7 @@ public class PiDiscoveryService {
             try {
                 listener.accept(device);
             } catch (Exception e) {
-                logger.error("Error notifying device removed listener", e);
+                LOGGER.error("Error notifying device removed listener", e);
             }
         }
     }
@@ -220,7 +220,7 @@ public class PiDiscoveryService {
         
         @Override
         public void serviceAdded(ServiceEvent event) {
-            logger.debug("Service added: {}", event.getName());
+            LOGGER.debug("Service added: {}", event.getName());
             // Request detailed service info
             jmdns.requestServiceInfo(event.getType(), event.getName(), MDNS_TIMEOUT);
         }
@@ -228,7 +228,7 @@ public class PiDiscoveryService {
         @Override
         public void serviceRemoved(ServiceEvent event) {
             String serviceName = event.getName();
-            logger.info("Service removed: {}", serviceName);
+            LOGGER.info("Service removed: {}", serviceName);
             
             PiDevice removedDevice = discoveredDevices.remove(serviceName);
             if (removedDevice != null) {
@@ -248,14 +248,14 @@ public class PiDiscoveryService {
             }
             
             if (hostAddress != null) {
-                logger.info("Service resolved: {} at {}", serviceName, hostAddress);
+                LOGGER.info("Service resolved: {} at {}", serviceName, hostAddress);
                 
                 PiDevice device = new PiDevice(serviceName, hostAddress, "Available");
                 discoveredDevices.put(serviceName, device);
                 notifyDeviceAdded(device);
                 
             } else {
-                logger.warn("Service resolved but no IP address found: {}", serviceName);
+                LOGGER.warn("Service resolved but no IP address found: {}", serviceName);
             }
         }
     }

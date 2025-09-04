@@ -3,7 +3,12 @@ package com.lydbydissing.audio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.TargetDataLine;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,9 +32,9 @@ import java.util.function.Consumer;
  */
 public class JavaAudioLoopback {
     
-    private static final Logger logger = LoggerFactory.getLogger(JavaAudioLoopback.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(JavaAudioLoopback.class);
     
-    /** Default audio format for the loopback */
+    /** Default audio format for the loopback. */
     public static final AudioFormat DEFAULT_FORMAT = new AudioFormat(
         AudioFormat.Encoding.PCM_SIGNED,
         48000.0f,  // Sample rate
@@ -40,10 +45,10 @@ public class JavaAudioLoopback {
         false      // Little endian
     );
     
-    /** Buffer size for audio processing */
+    /** Buffer size for audio processing. */
     private static final int BUFFER_SIZE = 4096;
     
-    /** Queue size for audio data buffering */
+    /** Queue size for audio data buffering. */
     private static final int QUEUE_SIZE = 50;
     
     private final AudioFormat audioFormat;
@@ -81,7 +86,7 @@ public class JavaAudioLoopback {
      */
     public JavaAudioLoopback(AudioFormat audioFormat) {
         this.audioFormat = audioFormat;
-        logger.info("Created Java audio loopback with format: {}", formatToString(audioFormat));
+        LOGGER.info("Created Java audio loopback with format: {}", formatToString(audioFormat));
     }
     
     /**
@@ -96,7 +101,7 @@ public class JavaAudioLoopback {
             throw new IllegalStateException("Java audio loopback is already active");
         }
         
-        logger.info("Starting Java audio loopback");
+        LOGGER.info("Starting Java audio loopback");
         
         try {
             // Create and open output line (for REW to send audio to)
@@ -130,11 +135,11 @@ public class JavaAudioLoopback {
             outputThread.start();
             inputThread.start();
             
-            logger.info("Java audio loopback started successfully");
-            logger.info("REW can now output to the default audio device");
+            LOGGER.info("Java audio loopback started successfully");
+            LOGGER.info("REW can now output to the default audio device");
             
         } catch (LineUnavailableException e) {
-            logger.error("Failed to start Java audio loopback", e);
+            LOGGER.error("Failed to start Java audio loopback", e);
             cleanup();
             throw e;
         }
@@ -145,11 +150,11 @@ public class JavaAudioLoopback {
      */
     public void stop() {
         if (!isActive.get()) {
-            logger.warn("Java audio loopback is not active");
+            LOGGER.warn("Java audio loopback is not active");
             return;
         }
         
-        logger.info("Stopping Java audio loopback");
+        LOGGER.info("Stopping Java audio loopback");
         
         isActive.set(false);
         
@@ -171,7 +176,7 @@ public class JavaAudioLoopback {
                 outputThread.join(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.warn("Interrupted while stopping output thread");
+                LOGGER.warn("Interrupted while stopping output thread");
             }
         }
         
@@ -181,12 +186,12 @@ public class JavaAudioLoopback {
                 inputThread.join(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.warn("Interrupted while stopping input thread");
+                LOGGER.warn("Interrupted while stopping input thread");
             }
         }
         
         cleanup();
-        logger.info("Java audio loopback stopped");
+        LOGGER.info("Java audio loopback stopped");
     }
     
     /**
@@ -223,7 +228,7 @@ public class JavaAudioLoopback {
      */
     public void setAudioDataConsumer(Consumer<byte[]> consumer) {
         this.audioDataConsumer = consumer;
-        logger.debug("Audio data consumer set for Java audio loopback");
+        LOGGER.debug("Audio data consumer set for Java audio loopback");
     }
     
     /**
@@ -233,7 +238,7 @@ public class JavaAudioLoopback {
      */
     public void setAudioLevelConsumer(Consumer<Double> consumer) {
         this.audioLevelConsumer = consumer;
-        logger.debug("Audio level consumer set for Java audio loopback");
+        LOGGER.debug("Audio level consumer set for Java audio loopback");
     }
     
     /**
@@ -241,7 +246,7 @@ public class JavaAudioLoopback {
      * This thread handles the SourceDataLine that REW will write to.
      */
     private void outputLoop() {
-        logger.debug("Audio output loop started");
+        LOGGER.debug("Audio output loop started");
         byte[] buffer = new byte[BUFFER_SIZE];
         
         while (isActive.get() && !Thread.currentThread().isInterrupted()) {
@@ -265,19 +270,19 @@ public class JavaAudioLoopback {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.error("Error in audio output loop", e);
+                LOGGER.error("Error in audio output loop", e);
                 break;
             }
         }
         
-        logger.debug("Audio output loop ended");
+        LOGGER.debug("Audio output loop ended");
     }
     
     /**
      * Input loop that captures audio from the system and forwards it to consumers.
      */
     private void inputLoop() {
-        logger.debug("Audio input loop started");
+        LOGGER.debug("Audio input loop started");
         byte[] buffer = new byte[BUFFER_SIZE];
         
         while (isActive.get() && !Thread.currentThread().isInterrupted()) {
@@ -296,7 +301,7 @@ public class JavaAudioLoopback {
                         // Queue for consumer
                         if (audioDataConsumer != null) {
                             if (!audioQueue.offer(audioData)) {
-                                logger.debug("Audio queue full, dropping data");
+                                LOGGER.debug("Audio queue full, dropping data");
                             }
                         }
                         
@@ -311,12 +316,12 @@ public class JavaAudioLoopback {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.error("Error in audio input loop", e);
+                LOGGER.error("Error in audio input loop", e);
                 break;
             }
         }
         
-        logger.debug("Audio input loop ended");
+        LOGGER.debug("Audio input loop ended");
     }
     
     /**
@@ -332,7 +337,7 @@ public class JavaAudioLoopback {
             try {
                 audioDataConsumer.accept(audioData);
             } catch (Exception e) {
-                logger.error("Error processing audio data", e);
+                LOGGER.error("Error processing audio data", e);
                 break;
             }
         }
@@ -368,7 +373,7 @@ public class JavaAudioLoopback {
             try {
                 audioLevelConsumer.accept(currentAudioLevel);
             } catch (Exception e) {
-                logger.error("Error notifying audio level consumer", e);
+                LOGGER.error("Error notifying audio level consumer", e);
             }
         }
         

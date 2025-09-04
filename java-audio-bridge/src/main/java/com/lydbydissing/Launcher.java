@@ -8,7 +8,14 @@ package com.lydbydissing;
  * @version 0.1.0
  * @since 1.0
  */
-public class Launcher {
+public final class Launcher {
+    
+    /**
+     * Private constructor to prevent instantiation of this utility class.
+     */
+    private Launcher() {
+        // Utility class - no instantiation allowed
+    }
     
     /**
      * Main entry point that launches the JavaFX application.

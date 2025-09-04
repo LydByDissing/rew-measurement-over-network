@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class HeadlessRunner {
     
-    private static final Logger logger = LoggerFactory.getLogger(HeadlessRunner.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(HeadlessRunner.class);
     
     private final CliOptions options;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -34,8 +34,8 @@ public class HeadlessRunner {
      * @throws Exception if startup fails
      */
     public void run() throws Exception {
-        logger.info("Starting REW Network Audio Bridge in headless mode");
-        logger.info("Target: {}:{}", options.getTargetIp(), options.getTargetPort());
+        LOGGER.info("Starting REW Network Audio Bridge in headless mode");
+        LOGGER.info("Target: {}:{}", options.getTargetIp(), options.getTargetPort());
         
         running.set(true);
         
@@ -59,7 +59,8 @@ public class HeadlessRunner {
             System.out.println("\n=== REW Network Audio Bridge - Headless Mode ===");
             System.out.println("Connected to Pi: " + options.getTargetIp() + ":" + options.getTargetPort());
             System.out.println("Audio Interface: " + audioBridgeService.getAudioSystemDescription());
-            System.out.println("REW Setup: Select '" + audioBridgeService.getVirtualDeviceName() + "' as output device");
+            System.out.println("REW Setup: Select '" + audioBridgeService.getVirtualDeviceName() 
+                + "' as output device");
             System.out.println();
             System.out.println("Status: ACTIVE - Audio streaming to Pi device");
             System.out.println("Press Ctrl+C to stop");
@@ -76,7 +77,7 @@ public class HeadlessRunner {
             }
             
         } catch (Exception e) {
-            logger.error("Error in headless runner", e);
+            LOGGER.error("Error in headless runner", e);
             throw e;
         } finally {
             shutdown();
@@ -103,7 +104,9 @@ public class HeadlessRunner {
             try {
                 Thread.sleep(10000); // Update every 10 seconds
                 
-                if (!running.get()) break;
+                if (!running.get()) {
+                    break;
+                }
                 
                 long currentAudioPackets = audioBridgeService.getAudioPacketsReceived();
                 long currentStreamPackets = audioBridgeService.getAudioPacketsStreamed();
@@ -112,8 +115,9 @@ public class HeadlessRunner {
                 long streamRate = currentStreamPackets - lastStreamPackets;
                 
                 // Print status update
-                System.out.printf("[%s] Audio: %d pkts/10s (level: %.3f) | Stream: %d pkts/10s | Total: %d audio, %d streamed%n",
-                                java.time.LocalTime.now().toString().substring(0, 8),
+                System.out.printf(
+                        "[%s] Audio: %d pkts/10s (level: %.3f) | Stream: %d pkts/10s | Total: %d audio, %d streamed%n",
+                        java.time.LocalTime.now().toString().substring(0, 8),
                                 audioRate,
                                 audioBridgeService.getCurrentAudioLevel(),
                                 streamRate,
@@ -138,7 +142,7 @@ public class HeadlessRunner {
             return; // Already shut down
         }
         
-        logger.info("Shutting down headless runner");
+        LOGGER.info("Shutting down headless runner");
         System.out.println("\nShutting down...");
         
         // Stop status monitoring
@@ -155,6 +159,6 @@ public class HeadlessRunner {
         System.out.println("  Audio packets streamed: " + audioBridgeService.getAudioPacketsStreamed());
         
         System.out.println("REW Network Audio Bridge stopped.");
-        logger.info("Headless runner shutdown complete");
+        LOGGER.info("Headless runner shutdown complete");
     }
 }

@@ -30,11 +30,14 @@ class LauncherTest {
     }
     
     @Test
-    @DisplayName("Should create Launcher instance")
-    void shouldCreateLauncherInstance() {
-        assertDoesNotThrow(() -> {
-            Launcher launcher = new Launcher();
-            assertThat(launcher).isNotNull();
+    @DisplayName("Should be a utility class with private constructor")
+    void shouldBeUtilityClassWithPrivateConstructor() {
+        // Test that Launcher is properly designed as a utility class
+        assertThat(Launcher.class.getDeclaredConstructors()).hasSize(1);
+        
+        var constructor = Launcher.class.getDeclaredConstructors()[0];
+        assertThat(constructor.getModifiers()).satisfies(modifiers -> {
+            assertThat(java.lang.reflect.Modifier.isPrivate(modifiers)).isTrue();
         });
     }
     

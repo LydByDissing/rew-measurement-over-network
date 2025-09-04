@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class AudioBridgeService {
     
-    private static final Logger logger = LoggerFactory.getLogger(AudioBridgeService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(AudioBridgeService.class);
     
     // Audio components
     private PulseAudioVirtualDevice virtualDevice;
@@ -50,11 +50,11 @@ public class AudioBridgeService {
      */
     public boolean initializeAudioSystem() {
         if (isInitialized.get()) {
-            logger.warn("Audio system is already initialized");
+            LOGGER.warn("Audio system is already initialized");
             return true;
         }
         
-        logger.info("Initializing audio system");
+        LOGGER.info("Initializing audio system");
         
         try {
             // Try to create virtual audio device first (same as headless)
@@ -69,14 +69,14 @@ public class AudioBridgeService {
                         activeStreamer.streamAudioData(audioData);
                         audioPacketsStreamed.incrementAndGet();
                     } catch (IOException e) {
-                        logger.error("Error streaming audio data", e);
+                        LOGGER.error("Error streaming audio data", e);
                     }
                 }
             });
             
             // Start the virtual device
             virtualDevice.start();
-            logger.info("Virtual audio device started successfully");
+            LOGGER.info("Virtual audio device started successfully");
             
             isInitialized.set(true);
             
@@ -88,7 +88,7 @@ public class AudioBridgeService {
             return true;
             
         } catch (Exception e) {
-            logger.warn("Failed to create virtual audio device, falling back to loopback: {}", e.getMessage());
+            LOGGER.warn("Failed to create virtual audio device, falling back to loopback: {}", e.getMessage());
             
             // Fallback to Java audio loopback
             try {
@@ -103,7 +103,7 @@ public class AudioBridgeService {
                             activeStreamer.streamAudioData(audioData);
                             audioPacketsStreamed.incrementAndGet();
                         } catch (IOException e2) {
-                            logger.error("Error streaming audio data", e2);
+                            LOGGER.error("Error streaming audio data", e2);
                         }
                     }
                 });
@@ -115,7 +115,7 @@ public class AudioBridgeService {
                 
                 // Start the loopback
                 audioLoopback.start();
-                logger.info("Audio loopback (fallback) started successfully");
+                LOGGER.info("Audio loopback (fallback) started successfully");
                 
                 isInitialized.set(true);
                 
@@ -127,7 +127,7 @@ public class AudioBridgeService {
                 return true;
                 
             } catch (Exception e2) {
-                logger.error("Failed to initialize both virtual device and fallback loopback", e2);
+                LOGGER.error("Failed to initialize both virtual device and fallback loopback", e2);
                 return false;
             }
         }
@@ -142,17 +142,17 @@ public class AudioBridgeService {
      */
     public boolean connectToDevice(String ipAddress, int port) {
         if (!isInitialized.get()) {
-            logger.error("Audio system must be initialized before connecting");
+            LOGGER.error("Audio system must be initialized before connecting");
             return false;
         }
         
         if (isConnected.get()) {
-            logger.warn("Already connected to a device. Disconnect first.");
+            LOGGER.warn("Already connected to a device. Disconnect first.");
             return false;
         }
         
         try {
-            logger.info("Connecting to device: {}:{}", ipAddress, port);
+            LOGGER.info("Connecting to device: {}:{}", ipAddress, port);
             
             InetAddress targetAddress = InetAddress.getByName(ipAddress);
             
@@ -170,7 +170,7 @@ public class AudioBridgeService {
             activeStreamer.startStreaming();
             
             isConnected.set(true);
-            logger.info("Successfully connected to {}:{}", ipAddress, port);
+            LOGGER.info("Successfully connected to {}:{}", ipAddress, port);
             
             // Notify callback
             if (onConnectionEstablished != null) {
@@ -180,7 +180,7 @@ public class AudioBridgeService {
             return true;
             
         } catch (Exception e) {
-            logger.error("Failed to connect to device {}:{}", ipAddress, port, e);
+            LOGGER.error("Failed to connect to device {}:{}", ipAddress, port, e);
             return false;
         }
     }
@@ -190,11 +190,11 @@ public class AudioBridgeService {
      */
     public void disconnect() {
         if (!isConnected.get()) {
-            logger.debug("Not connected to any device");
+            LOGGER.debug("Not connected to any device");
             return;
         }
         
-        logger.info("Disconnecting from device");
+        LOGGER.info("Disconnecting from device");
         
         if (activeStreamer != null) {
             activeStreamer.stopStreaming();
@@ -202,7 +202,7 @@ public class AudioBridgeService {
         }
         
         isConnected.set(false);
-        logger.info("Disconnected successfully");
+        LOGGER.info("Disconnected successfully");
         
         // Notify callback
         if (onConnectionLost != null) {
@@ -214,7 +214,7 @@ public class AudioBridgeService {
      * Shuts down the audio bridge service.
      */
     public void shutdown() {
-        logger.info("Shutting down audio bridge service");
+        LOGGER.info("Shutting down audio bridge service");
         
         // Disconnect first
         disconnect();
@@ -231,7 +231,7 @@ public class AudioBridgeService {
         }
         
         isInitialized.set(false);
-        logger.info("Audio bridge service stopped");
+        LOGGER.info("Audio bridge service stopped");
     }
     
     // Getters for status and statistics

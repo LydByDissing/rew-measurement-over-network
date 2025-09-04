@@ -3,7 +3,8 @@ package com.lydbydissing.audio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.LineUnavailableException;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -24,15 +25,15 @@ import java.util.function.Consumer;
  */
 public class VirtualAudioSink {
     
-    private static final Logger logger = LoggerFactory.getLogger(VirtualAudioSink.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(VirtualAudioSink.class);
     
-    /** Name of the virtual audio sink */
+    /** Name of the virtual audio sink. */
     public static final String SINK_NAME = "rew_network_bridge";
     
-    /** Human-readable description of the sink */
+    /** Human-readable description of the sink. */
     public static final String SINK_DESCRIPTION = "REW Network Bridge";
     
-    /** Default audio format for the virtual sink */
+    /** Default audio format for the virtual sink. */
     public static final AudioFormat DEFAULT_FORMAT = new AudioFormat(
         AudioFormat.Encoding.PCM_SIGNED,
         48000.0f,  // 48kHz sample rate
@@ -53,7 +54,7 @@ public class VirtualAudioSink {
      * Creates a new virtual audio sink.
      */
     public VirtualAudioSink() {
-        logger.info("Created virtual audio sink: {}", SINK_DESCRIPTION);
+        LOGGER.info("Created virtual audio sink: {}", SINK_DESCRIPTION);
     }
     
     /**
@@ -68,7 +69,7 @@ public class VirtualAudioSink {
             throw new IllegalStateException("Virtual audio sink is already active");
         }
         
-        logger.info("Starting virtual audio sink");
+        LOGGER.info("Starting virtual audio sink");
         
         try {
             // Create PulseAudio null sink
@@ -78,10 +79,10 @@ public class VirtualAudioSink {
             startAudioCapture();
             
             isActive.set(true);
-            logger.info("Virtual audio sink '{}' created and active", SINK_DESCRIPTION);
+            LOGGER.info("Virtual audio sink '{}' created and active", SINK_DESCRIPTION);
             
         } catch (Exception e) {
-            logger.error("Failed to start virtual audio sink", e);
+            LOGGER.error("Failed to start virtual audio sink", e);
             cleanup();
             throw new IOException("Failed to create virtual audio sink", e);
         }
@@ -92,11 +93,11 @@ public class VirtualAudioSink {
      */
     public void stop() {
         if (!isActive.get()) {
-            logger.warn("Virtual audio sink is not active");
+            LOGGER.warn("Virtual audio sink is not active");
             return;
         }
         
-        logger.info("Stopping virtual audio sink");
+        LOGGER.info("Stopping virtual audio sink");
         
         isActive.set(false);
         
@@ -111,12 +112,12 @@ public class VirtualAudioSink {
             removePulseAudioSink();
             
         } catch (Exception e) {
-            logger.error("Error stopping virtual audio sink", e);
+            LOGGER.error("Error stopping virtual audio sink", e);
         } finally {
             cleanup();
         }
         
-        logger.info("Virtual audio sink stopped");
+        LOGGER.info("Virtual audio sink stopped");
     }
     
     /**
@@ -138,7 +139,7 @@ public class VirtualAudioSink {
         if (captureMonitor != null) {
             captureMonitor.setAudioDataConsumer(consumer);
         }
-        logger.debug("Audio data consumer set for virtual sink");
+        LOGGER.debug("Audio data consumer set for virtual sink");
     }
     
     /**
@@ -165,7 +166,7 @@ public class VirtualAudioSink {
      * @throws IOException if the sink cannot be created
      */
     private void createPulseAudioSink() throws IOException {
-        logger.debug("Creating PulseAudio null sink");
+        LOGGER.debug("Creating PulseAudio null sink");
         
         // First check if PulseAudio is available
         if (!isPulseAudioAvailable()) {
@@ -193,7 +194,7 @@ public class VirtualAudioSink {
             byte[] output = process.getInputStream().readAllBytes();
             sinkModuleId = new String(output).trim();
             
-            logger.info("Created PulseAudio sink with module ID: {}", sinkModuleId);
+            LOGGER.info("Created PulseAudio sink with module ID: {}", sinkModuleId);
             
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -206,11 +207,11 @@ public class VirtualAudioSink {
      */
     private void removePulseAudioSink() {
         if (sinkModuleId == null || sinkModuleId.isEmpty()) {
-            logger.warn("No module ID available for sink removal");
+            LOGGER.warn("No module ID available for sink removal");
             return;
         }
         
-        logger.debug("Removing PulseAudio sink with module ID: {}", sinkModuleId);
+        LOGGER.debug("Removing PulseAudio sink with module ID: {}", sinkModuleId);
         
         try {
             ProcessBuilder pb = new ProcessBuilder("pactl", "unload-module", sinkModuleId);
@@ -218,13 +219,13 @@ public class VirtualAudioSink {
             int exitCode = process.waitFor();
             
             if (exitCode == 0) {
-                logger.info("Successfully removed PulseAudio sink");
+                LOGGER.info("Successfully removed PulseAudio sink");
             } else {
-                logger.warn("Failed to remove PulseAudio sink (exit code: {})", exitCode);
+                LOGGER.warn("Failed to remove PulseAudio sink (exit code: {})", exitCode);
             }
             
         } catch (Exception e) {
-            logger.error("Error removing PulseAudio sink", e);
+            LOGGER.error("Error removing PulseAudio sink", e);
         } finally {
             sinkModuleId = null;
         }
@@ -236,7 +237,7 @@ public class VirtualAudioSink {
      * @throws IOException if audio capture cannot be started
      */
     private void startAudioCapture() throws IOException {
-        logger.debug("Starting audio capture from virtual sink");
+        LOGGER.debug("Starting audio capture from virtual sink");
         
         captureMonitor = new AudioCaptureMonitor(SINK_NAME + ".monitor", DEFAULT_FORMAT);
         if (audioDataConsumer != null) {
@@ -245,9 +246,9 @@ public class VirtualAudioSink {
         
         try {
             captureMonitor.start();
-            logger.debug("Audio capture started for virtual sink");
+            LOGGER.debug("Audio capture started for virtual sink");
         } catch (LineUnavailableException e) {
-            logger.error("Failed to start audio capture monitor", e);
+            LOGGER.error("Failed to start audio capture monitor", e);
             throw new IOException("Failed to start audio capture from virtual sink", e);
         }
     }
@@ -264,7 +265,7 @@ public class VirtualAudioSink {
             int exitCode = process.waitFor();
             return exitCode == 0;
         } catch (Exception e) {
-            logger.debug("PulseAudio not available: {}", e.getMessage());
+            LOGGER.debug("PulseAudio not available: {}", e.getMessage());
             return false;
         }
     }

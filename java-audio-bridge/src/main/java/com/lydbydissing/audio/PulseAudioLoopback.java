@@ -3,7 +3,6 @@ package com.lydbydissing.audio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.sound.sampled.LineUnavailableException;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -28,12 +27,12 @@ import java.util.function.Consumer;
  */
 public class PulseAudioLoopback {
     
-    private static final Logger logger = LoggerFactory.getLogger(PulseAudioLoopback.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PulseAudioLoopback.class);
     
-    /** Name of the virtual output device */
+    /** Name of the virtual output device. */
     public static final String SINK_NAME = "REW_Network_Bridge";
     
-    /** Description that appears in audio applications */
+    /** Description that appears in audio applications. */
     public static final String SINK_DESCRIPTION = "REW Network Audio Bridge";
     
     private final AtomicBoolean isActive = new AtomicBoolean(false);
@@ -53,7 +52,7 @@ public class PulseAudioLoopback {
             throw new IllegalStateException("PulseAudio loopback is already active");
         }
         
-        logger.info("Creating PulseAudio loopback: {}", SINK_DESCRIPTION);
+        LOGGER.info("Creating PulseAudio loopback: {}", SINK_DESCRIPTION);
         
         if (!isPulseAudioAvailable()) {
             throw new IOException("PulseAudio is not available");
@@ -70,10 +69,10 @@ public class PulseAudioLoopback {
             startMonitoring();
             
             isActive.set(true);
-            logger.info("PulseAudio loopback '{}' created successfully", SINK_DESCRIPTION);
+            LOGGER.info("PulseAudio loopback '{}' created successfully", SINK_DESCRIPTION);
             
         } catch (Exception e) {
-            logger.error("Failed to create PulseAudio loopback", e);
+            LOGGER.error("Failed to create PulseAudio loopback", e);
             cleanup();
             throw new IOException("Failed to create PulseAudio loopback: " + e.getMessage(), e);
         }
@@ -84,11 +83,11 @@ public class PulseAudioLoopback {
      */
     public void stop() {
         if (!isActive.get()) {
-            logger.warn("PulseAudio loopback is not active");
+            LOGGER.warn("PulseAudio loopback is not active");
             return;
         }
         
-        logger.info("Stopping PulseAudio loopback");
+        LOGGER.info("Stopping PulseAudio loopback");
         
         isActive.set(false);
         
@@ -102,11 +101,13 @@ public class PulseAudioLoopback {
         removePulseAudioModules();
         
         cleanup();
-        logger.info("PulseAudio loopback stopped");
+        LOGGER.info("PulseAudio loopback stopped");
     }
     
     /**
      * Checks if the loopback is active.
+     * 
+     * @return true if the loopback is active, false otherwise
      */
     public boolean isActive() {
         return isActive.get();
@@ -114,17 +115,21 @@ public class PulseAudioLoopback {
     
     /**
      * Sets the consumer for captured audio data.
+     * 
+     * @param consumer the consumer to set for captured audio data
      */
     public void setAudioDataConsumer(Consumer<byte[]> consumer) {
         this.audioDataConsumer = consumer;
         if (monitor != null) {
             monitor.setAudioDataConsumer(consumer);
         }
-        logger.debug("Audio data consumer set");
+        LOGGER.debug("Audio data consumer set");
     }
     
     /**
      * Gets the device name that appears in audio applications.
+     * 
+     * @return the device name
      */
     public String getDeviceName() {
         return SINK_NAME;
@@ -132,6 +137,8 @@ public class PulseAudioLoopback {
     
     /**
      * Gets the device description.
+     * 
+     * @return the device description
      */
     public String getDeviceDescription() {
         return SINK_DESCRIPTION;
@@ -139,28 +146,32 @@ public class PulseAudioLoopback {
     
     /**
      * Creates the null-sink that REW will output to.
+     * 
+     * @throws IOException if the null-sink creation fails
      */
     private void createNullSink() throws IOException {
-        logger.debug("Creating null-sink");
+        LOGGER.debug("Creating null-sink");
         
         ProcessResult result = runCommand(new String[]{
             "pactl", "load-module", "module-null-sink",
             "sink_name=" + SINK_NAME
         });
         
-        if (result.exitCode != 0) {
-            throw new IOException("Failed to create null-sink: " + result.stderr);
+        if (result.getExitCode() != 0) {
+            throw new IOException("Failed to create null-sink: " + result.getStderr());
         }
         
-        sinkModuleId = result.stdout.trim();
-        logger.info("Created null-sink '{}' with module ID: {}", SINK_NAME, sinkModuleId);
+        sinkModuleId = result.getStdout().trim();
+        LOGGER.info("Created null-sink '{}' with module ID: {}", SINK_NAME, sinkModuleId);
     }
     
     /**
      * Creates loopback from our null-sink to speakers so user hears audio.
+     * 
+     * @throws IOException if the speaker loopback creation fails
      */
     private void createSpeakerLoopback() throws IOException {
-        logger.debug("Creating speaker loopback");
+        LOGGER.debug("Creating speaker loopback");
         
         ProcessResult result = runCommand(new String[]{
             "pactl", "load-module", "module-loopback",
@@ -169,19 +180,21 @@ public class PulseAudioLoopback {
             "latency_msec=20"
         });
         
-        if (result.exitCode != 0) {
-            throw new IOException("Failed to create speaker loopback: " + result.stderr);
+        if (result.getExitCode() != 0) {
+            throw new IOException("Failed to create speaker loopback: " + result.getStderr());
         }
         
-        loopbackModuleId = result.stdout.trim();
-        logger.debug("Created speaker loopback with module ID: {}", loopbackModuleId);
+        loopbackModuleId = result.getStdout().trim();
+        LOGGER.debug("Created speaker loopback with module ID: {}", loopbackModuleId);
     }
     
     /**
      * Starts monitoring the null-sink for Java audio capture.
+     * 
+     * @throws IOException if monitoring cannot be started
      */
     private void startMonitoring() throws IOException {
-        logger.debug("Starting Java audio monitoring");
+        LOGGER.debug("Starting Java audio monitoring");
         
         String monitorSource = SINK_NAME + ".monitor";
         monitor = new AudioCaptureMonitor(monitorSource, PulseAudioVirtualDevice.DEVICE_FORMAT);
@@ -192,7 +205,7 @@ public class PulseAudioLoopback {
         
         try {
             monitor.start();
-            logger.debug("Audio monitoring started");
+            LOGGER.debug("Audio monitoring started");
         } catch (Exception e) {
             throw new IOException("Failed to start audio monitoring", e);
         }
@@ -204,50 +217,56 @@ public class PulseAudioLoopback {
     private void removePulseAudioModules() {
         // Remove loopback first
         if (loopbackModuleId != null) {
-            logger.debug("Removing loopback module: {}", loopbackModuleId);
+            LOGGER.debug("Removing loopback module: {}", loopbackModuleId);
             try {
                 ProcessResult result = runCommand(new String[]{"pactl", "unload-module", loopbackModuleId});
-                if (result.exitCode == 0) {
-                    logger.debug("Loopback module removed");
+                if (result.getExitCode() == 0) {
+                    LOGGER.debug("Loopback module removed");
                 } else {
-                    logger.warn("Failed to remove loopback: {}", result.stderr);
+                    LOGGER.warn("Failed to remove loopback: {}", result.getStderr());
                 }
             } catch (IOException e) {
-                logger.error("Error removing loopback", e);
+                LOGGER.error("Error removing loopback", e);
             }
         }
         
         // Remove null-sink
         if (sinkModuleId != null) {
-            logger.debug("Removing null-sink module: {}", sinkModuleId);
+            LOGGER.debug("Removing null-sink module: {}", sinkModuleId);
             try {
                 ProcessResult result = runCommand(new String[]{"pactl", "unload-module", sinkModuleId});
-                if (result.exitCode == 0) {
-                    logger.debug("Null-sink module removed");
+                if (result.getExitCode() == 0) {
+                    LOGGER.debug("Null-sink module removed");
                 } else {
-                    logger.warn("Failed to remove null-sink: {}", result.stderr);
+                    LOGGER.warn("Failed to remove null-sink: {}", result.getStderr());
                 }
             } catch (IOException e) {
-                logger.error("Error removing null-sink", e);
+                LOGGER.error("Error removing null-sink", e);
             }
         }
     }
     
     /**
      * Checks if PulseAudio is available.
+     * 
+     * @return true if PulseAudio is available, false otherwise
      */
     private boolean isPulseAudioAvailable() {
         try {
             ProcessResult result = runCommand(new String[]{"pactl", "info"});
-            return result.exitCode == 0;
+            return result.getExitCode() == 0;
         } catch (IOException e) {
-            logger.debug("PulseAudio not available: {}", e.getMessage());
+            LOGGER.debug("PulseAudio not available: {}", e.getMessage());
             return false;
         }
     }
     
     /**
      * Runs a command and returns the result.
+     * 
+     * @param command the command to run
+     * @return the result of the command execution
+     * @throws IOException if the command execution fails
      */
     private ProcessResult runCommand(String[] command) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(command);
@@ -291,14 +310,41 @@ public class PulseAudioLoopback {
      * Result of a command execution.
      */
     private static class ProcessResult {
-        final int exitCode;
-        final String stdout;
-        final String stderr;
+        private final int exitCode;
+        private final String stdout;
+        private final String stderr;
         
         ProcessResult(int exitCode, String stdout, String stderr) {
             this.exitCode = exitCode;
             this.stdout = stdout;
             this.stderr = stderr;
         }
+        
+        /**
+         * Gets the exit code.
+         * 
+         * @return the exit code
+         */
+        public int getExitCode() {
+            return exitCode;
+        }
+        
+        /**
+         * Gets the standard output.
+         * 
+         * @return the standard output
+         */
+        public String getStdout() {
+            return stdout;
+        }
+        
+         /**
+          * Gets the standard error.
+          * 
+          * @return the standard error
+          */
+         public String getStderr() {
+             return stderr;
+         }
     }
 }
