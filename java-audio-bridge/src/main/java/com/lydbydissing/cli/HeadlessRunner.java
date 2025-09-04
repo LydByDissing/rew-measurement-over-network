@@ -21,11 +21,12 @@ public class HeadlessRunner {
     private final CliOptions options;
     private final AtomicBoolean running = new AtomicBoolean(false);
     
-    private final AudioBridgeService audioBridgeService = new AudioBridgeService();
+    private final AudioBridgeService audioBridgeService;
     private Thread statusThread;
     
     public HeadlessRunner(CliOptions options) {
         this.options = options;
+        this.audioBridgeService = new AudioBridgeService(options.isTestMode());
     }
     
     /**

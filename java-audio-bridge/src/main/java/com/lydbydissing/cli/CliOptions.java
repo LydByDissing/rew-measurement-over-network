@@ -14,6 +14,7 @@ public class CliOptions {
     private int targetPort = 5004;
     private boolean showHelp = false;
     private boolean showVersion = false;
+    private boolean testMode = false;
     
     /**
      * Parses command line arguments into options.
@@ -66,6 +67,10 @@ public class CliOptions {
                     
                 case "--version":
                     options.showVersion = true;
+                    break;
+                    
+                case "--test-mode":
+                    options.testMode = true;
                     break;
                     
                 default:
@@ -126,12 +131,14 @@ public class CliOptions {
         System.out.println("  -h, --headless              Run without GUI, connect automatically");
         System.out.println("  -t, --target <IP>           Target Pi device IP address (required for headless)");
         System.out.println("  -p, --port <PORT>           Target RTP port (default: 5004)");
+        System.out.println("      --test-mode             Enable test mode (mock audio for containers)");
         System.out.println("      --help                  Show this help message");
         System.out.println("      --version               Show version information");
         System.out.println();
         System.out.println("Examples:");
         System.out.println("  java -jar rew-audio-bridge.jar --headless --target 192.168.1.100");
         System.out.println("  java -jar rew-audio-bridge.jar --headless -t 10.0.0.50 -p 5005");
+        System.out.println("  java -jar rew-audio-bridge.jar --headless --target 192.168.1.100 --test-mode");
         System.out.println();
         System.out.println("In headless mode, the application will:");
         System.out.println("  - Start the Java audio loopback automatically");
@@ -170,9 +177,13 @@ public class CliOptions {
         return showVersion;
     }
     
+    public boolean isTestMode() {
+        return testMode;
+    }
+    
     @Override
     public String toString() {
-        return String.format("CliOptions{headless=%s, targetIp='%s', targetPort=%d, showHelp=%s, showVersion=%s}",
-                           headless, targetIp, targetPort, showHelp, showVersion);
+        return String.format("CliOptions{headless=%s, targetIp='%s', targetPort=%d, showHelp=%s, showVersion=%s, testMode=%s}",
+                           headless, targetIp, targetPort, showHelp, showVersion, testMode);
     }
 }

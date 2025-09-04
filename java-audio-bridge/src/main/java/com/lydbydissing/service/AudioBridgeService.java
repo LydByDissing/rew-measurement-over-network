@@ -1,6 +1,7 @@
 package com.lydbydissing.service;
 
 import com.lydbydissing.audio.JavaAudioLoopback;
+import com.lydbydissing.audio.MockAudioLoopback;
 import com.lydbydissing.audio.PulseAudioVirtualDevice;
 import com.lydbydissing.network.RTPAudioStreamer;
 import org.slf4j.Logger;
@@ -27,7 +28,11 @@ public class AudioBridgeService {
     // Audio components
     private PulseAudioVirtualDevice virtualDevice;
     private JavaAudioLoopback audioLoopback;
+    private MockAudioLoopback mockAudioLoopback;
     private RTPAudioStreamer activeStreamer;
+    
+    // Configuration
+    private final boolean testMode;
     
     // State management
     private final AtomicBoolean isInitialized = new AtomicBoolean(false);
@@ -44,6 +49,25 @@ public class AudioBridgeService {
     private volatile Runnable onConnectionLost;
     
     /**
+     * Creates a new AudioBridgeService in normal mode.
+     */
+    public AudioBridgeService() {
+        this(false);
+    }
+    
+    /**
+     * Creates a new AudioBridgeService with the specified test mode.
+     * 
+     * @param testMode true to enable test mode (mock audio for containers)
+     */
+    public AudioBridgeService(boolean testMode) {
+        this.testMode = testMode;
+        if (testMode) {
+            LOGGER.info("AudioBridgeService initialized in test mode");
+        }
+    }
+    
+    /**
      * Initializes the audio system using the same logic as HeadlessRunner.
      * 
      * @return true if initialization was successful
@@ -54,7 +78,61 @@ public class AudioBridgeService {
             return true;
         }
         
-        LOGGER.info("Initializing audio system");
+        LOGGER.info("Initializing audio system (test mode: {})", testMode);
+        
+        // In test mode, skip virtual device and use mock audio directly
+        if (testMode) {
+            try {
+                // Create standard audio format for testing
+                AudioFormat testFormat = new AudioFormat(
+                    AudioFormat.Encoding.PCM_SIGNED,
+                    48000.0f,  // Sample rate
+                    16,        // Bits per sample
+                    2,         // Channels (stereo)
+                    4,         // Frame size (2 bytes per sample * 2 channels)
+                    48000.0f,  // Frame rate
+                    false      // Little endian
+                );
+                
+                mockAudioLoopback = new MockAudioLoopback(testFormat);
+                
+                // Set up audio data consumer
+                mockAudioLoopback.setAudioDataConsumer(audioData -> {
+                    audioPacketsReceived.incrementAndGet();
+                    
+                    if (activeStreamer != null && activeStreamer.isStreaming()) {
+                        try {
+                            activeStreamer.streamAudioData(audioData);
+                            audioPacketsStreamed.incrementAndGet();
+                        } catch (IOException e) {
+                            LOGGER.error("Error streaming audio data", e);
+                        }
+                    }
+                });
+                
+                // Set up level monitoring
+                mockAudioLoopback.setAudioLevelConsumer(level -> {
+                    currentAudioLevel = level;
+                });
+                
+                // Start the mock audio loopback
+                mockAudioLoopback.start();
+                LOGGER.info("Mock audio loopback started successfully");
+                
+                isInitialized.set(true);
+                
+                // Notify callback
+                if (onAudioSystemInitialized != null) {
+                    onAudioSystemInitialized.run();
+                }
+                
+                return true;
+                
+            } catch (Exception e) {
+                LOGGER.error("Failed to initialize mock audio loopback", e);
+                return false;
+            }
+        }
         
         try {
             // Try to create virtual audio device first (same as headless)
@@ -228,6 +306,11 @@ public class AudioBridgeService {
         if (audioLoopback != null && audioLoopback.isActive()) {
             audioLoopback.stop();
             audioLoopback = null;
+        }
+        
+        if (mockAudioLoopback != null && mockAudioLoopback.isActive()) {
+            mockAudioLoopback.stop();
+            mockAudioLoopback = null;
         }
         
         isInitialized.set(false);
