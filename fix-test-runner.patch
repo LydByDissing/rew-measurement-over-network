@@ -1,0 +1,30 @@
+# Fix for test-runner script - Remove 'set -e' and fix fail() function
+
+# Problem: Script exits on first failure due to 'set -e' and fail() returns 1
+# Solution: Let tests continue and exit only at the end based on overall results
+
+# Apply this patch to Dockerfile.test-runner:
+
+1. Change line 27:
+   FROM: set -e  
+   TO:   set -o pipefail
+
+2. Change lines 51-54:
+   FROM: 
+   fail() {
+       echo -e "${RED}[FAIL]${NC} $1"
+       return 1
+   }
+   
+   TO:
+   fail() {
+       echo -e "${RED}[FAIL]${NC} $1"
+       # Don't return 1 here - let tests continue
+   }
+
+3. The script already has proper exit handling at the end:
+   - Counts TESTS_PASSED and TESTS_FAILED
+   - Exits with EXIT_CODE=0 if TESTS_FAILED=0, else EXIT_CODE=1
+
+This allows all tests to run and provides complete test results instead of 
+exiting on the first failure.

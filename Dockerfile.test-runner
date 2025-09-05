@@ -24,7 +24,7 @@ WORKDIR /app
 # Create comprehensive integration test script
 COPY <<'EOF' /app/run-integration-tests.sh
 #!/bin/bash
-set -e
+# Don't use set -e - we want to collect all test results, not exit on first failure
 
 # Colors for output
 RED='\033[0;31m'
@@ -50,7 +50,7 @@ success() {
 
 fail() {
     echo -e "${RED}[FAIL]${NC} $1"
-    return 1
+    # Don't exit immediately, just increment counter
 }
 
 warn() {
@@ -74,7 +74,10 @@ echo
 
 # Test 1: Network Connectivity
 log "Testing network connectivity..."
-if ping -c 3 "$JAVA_BRIDGE_IP" > /dev/null 2>&1; then
+
+# Test Java Bridge connectivity
+log "Pinging Java Bridge ($JAVA_BRIDGE_IP)..."
+if ping -c 2 -W 2 "$JAVA_BRIDGE_IP" > /dev/null 2>&1; then
     success "Java Bridge ($JAVA_BRIDGE_IP) is reachable"
     ((TESTS_PASSED++))
 else
@@ -82,7 +85,9 @@ else
     ((TESTS_FAILED++))
 fi
 
-if ping -c 3 "$PI1_IP" > /dev/null 2>&1; then
+# Test Pi Receiver 1 connectivity
+log "Pinging Pi Receiver 1 ($PI1_IP)..."
+if ping -c 2 -W 2 "$PI1_IP" > /dev/null 2>&1; then
     success "Pi Receiver 1 ($PI1_IP) is reachable"
     ((TESTS_PASSED++))
 else
@@ -90,7 +95,9 @@ else
     ((TESTS_FAILED++))
 fi
 
-if ping -c 3 "$PI2_IP" > /dev/null 2>&1; then
+# Test Pi Receiver 2 connectivity
+log "Pinging Pi Receiver 2 ($PI2_IP)..."
+if ping -c 2 -W 2 "$PI2_IP" > /dev/null 2>&1; then
     success "Pi Receiver 2 ($PI2_IP) is reachable"
     ((TESTS_PASSED++))
 else
@@ -98,8 +105,14 @@ else
     ((TESTS_FAILED++))
 fi
 
+log "Network connectivity tests completed. Continuing with service tests..."
+
 # Test 2: Service Health Checks
 log "Testing service health endpoints..."
+
+# Wait a bit for services to be fully ready
+log "Waiting 5 seconds for services to be ready..."
+sleep 5
 
 # Check Pi receivers HTTP status
 for pi_num in 1 2; do
@@ -108,16 +121,23 @@ for pi_num in 1 2; do
         2) PI_IP=$PI2_IP ;;
     esac
     
-    if curl -s "http://$PI_IP:8080/health" | jq -r '.status' | grep -q "healthy"; then
+    log "Testing Pi Receiver $pi_num health endpoint at http://$PI_IP:8080/health"
+    
+    # Try health check with timeout and better error handling
+    if timeout 10 curl -s --connect-timeout 5 "http://$PI_IP:8080/health" | jq -r '.status' 2>/dev/null | grep -q "healthy"; then
         success "Pi Receiver $pi_num health check passed"
         ((TESTS_PASSED++))
     else
         fail "Pi Receiver $pi_num health check failed"
         ((TESTS_FAILED++))
+        # Log the actual response for debugging
+        log "Debug: Actual response from Pi Receiver $pi_num:"
+        timeout 5 curl -s "http://$PI_IP:8080/health" 2>&1 | head -3 || echo "No response"
     fi
     
-    # Get detailed status
-    curl -s "http://$PI_IP:8080/status" > "$TEST_RESULTS_DIR/pi${pi_num}-status.json" || true
+    # Get detailed status (don't fail if this doesn't work)
+    log "Getting detailed status from Pi Receiver $pi_num..."
+    timeout 5 curl -s "http://$PI_IP:8080/status" > "$TEST_RESULTS_DIR/pi${pi_num}-status.json" 2>/dev/null || echo "{\"error\": \"Could not get status\"}" > "$TEST_RESULTS_DIR/pi${pi_num}-status.json"
 done
 
 # Test 3: mDNS Service Discovery Simulation
@@ -304,7 +324,23 @@ cat > "$TEST_RESULTS_DIR/test-summary.json" <<INNER_EOF
 INNER_EOF
 
 echo "==============================================="
-exit $EXIT_CODE
+
+# Final debug info
+echo "Debug Information:"
+echo "- Test start time: $TEST_START_TIME"
+echo "- Test end time: $(date +%s)"  
+echo "- Tests passed: $TESTS_PASSED"
+echo "- Tests failed: $TESTS_FAILED"
+echo "- Exit code will be: $EXIT_CODE"
+
+# Make sure we exit with the right code
+if [ $TESTS_FAILED -eq 0 ]; then
+    echo "🎉 All tests passed - exiting with success"
+    exit 0
+else
+    echo "❌ $TESTS_FAILED tests failed - exiting with failure"
+    exit 1
+fi
 EOF
 
 RUN chmod +x /app/run-integration-tests.sh
