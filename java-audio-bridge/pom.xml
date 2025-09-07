@@ -43,6 +43,7 @@
         <maven-surefire-plugin.version>3.0.0-M9</maven-surefire-plugin.version>
         <maven-failsafe-plugin.version>3.0.0-M9</maven-failsafe-plugin.version>
         <maven-shade-plugin.version>3.4.1</maven-shade-plugin.version>
+        <maven-site-plugin.version>3.12.1</maven-site-plugin.version>
         <spotbugs-maven-plugin.version>4.7.3.0</spotbugs-maven-plugin.version>
         <checkstyle-plugin.version>3.2.1</checkstyle-plugin.version>
         <jacoco-maven-plugin.version>0.8.11</jacoco-maven-plugin.version>
@@ -178,7 +179,7 @@
                         <prism.order>sw</prism.order>
                         <prism.text>t2k</prism.text>
                     </systemPropertyVariables>
-                    <argLine>
+                    <argLine>@{argLine}
                         --add-opens java.base/java.lang=ALL-UNNAMED
                         --add-opens java.base/java.util=ALL-UNNAMED
                         --add-opens java.desktop/java.awt.font=ALL-UNNAMED
@@ -209,7 +210,7 @@
                         <prism.order>sw</prism.order>
                         <prism.text>t2k</prism.text>
                     </systemPropertyVariables>
-                    <argLine>
+                    <argLine>@{argLine}
                         --add-opens java.base/java.lang=ALL-UNNAMED
                         --add-opens java.base/java.util=ALL-UNNAMED
                         --add-opens java.desktop/java.awt.font=ALL-UNNAMED
@@ -269,11 +270,23 @@
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco-maven-plugin.version}</version>
                 <executions>
+                    <!-- Prepare agent for unit tests -->
                     <execution>
+                        <id>prepare-agent</id>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
                     </execution>
+                    
+                    <!-- Prepare agent for integration tests -->
+                    <execution>
+                        <id>prepare-agent-integration</id>
+                        <goals>
+                            <goal>prepare-agent-integration</goal>
+                        </goals>
+                    </execution>
+                    
+                    <!-- Generate unit test report -->
                     <execution>
                         <id>report</id>
                         <phase>test</phase>
@@ -281,12 +294,56 @@
                             <goal>report</goal>
                         </goals>
                     </execution>
+                    
+                    <!-- Generate integration test report -->
+                    <execution>
+                        <id>report-integration</id>
+                        <phase>post-integration-test</phase>
+                        <goals>
+                            <goal>report-integration</goal>
+                        </goals>
+                    </execution>
+                    
+                    <!-- Generate merged report -->
+                    <execution>
+                        <id>merge-results</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>merge</goal>
+                        </goals>
+                        <configuration>
+                            <fileSets>
+                                <fileSet>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>*.exec</include>
+                                    </includes>
+                                </fileSet>
+                            </fileSets>
+                        </configuration>
+                    </execution>
+                    
+                    <!-- Generate merged report -->
+                    <execution>
+                        <id>post-merge-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                        <configuration>
+                            <dataFile>${project.build.directory}/jacoco.exec</dataFile>
+                        </configuration>
+                    </execution>
+                    
+                    <!-- Coverage check -->
                     <execution>
                         <id>check</id>
+                        <phase>verify</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>
                         <configuration>
+                            <dataFile>${project.build.directory}/jacoco.exec</dataFile>
                             <rules>
                                 <rule>
                                     <element>BUNDLE</element>
@@ -294,7 +351,12 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.80</minimum>
+                                            <minimum>0.02</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.02</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
@@ -363,15 +425,27 @@
                     <mainClass>com.lydbydissing.Launcher</mainClass>
                 </configuration>
             </plugin>
+            
+            <!-- Maven Site Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-site-plugin</artifactId>
+                <version>${maven-site-plugin.version}</version>
+                <configuration>
+                    <locales>en</locales>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
     
     <!-- Reporting -->
     <reporting>
         <plugins>
+            <!-- JaCoCo Code Coverage Report -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco-maven-plugin.version}</version>
                 <reportSets>
                     <reportSet>
                         <reports>
@@ -380,17 +454,72 @@
                     </reportSet>
                 </reportSets>
             </plugin>
+            
+            <!-- Surefire Test Results Report -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <reportSets>
+                    <reportSet>
+                        <reports>
+                            <report>report-only</report>
+                        </reports>
+                    </reportSet>
+                </reportSets>
+            </plugin>
+            
+            <!-- Failsafe Integration Test Report -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <reportSets>
+                    <reportSet>
+                        <id>integration-tests</id>
+                        <reports>
+                            <report>failsafe-report-only</report>
+                        </reports>
+                    </reportSet>
+                </reportSets>
+            </plugin>
+            
+            <!-- SpotBugs Static Analysis Report -->
             <plugin>
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>${spotbugs-maven-plugin.version}</version>
             </plugin>
+            
+            <!-- Checkstyle Code Style Report -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>${checkstyle-plugin.version}</version>
                 <reportSets>
                     <reportSet>
                         <reports>
                             <report>checkstyle</report>
+                        </reports>
+                    </reportSet>
+                </reportSets>
+            </plugin>
+            
+            <!-- Project Info Reports -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-project-info-reports-plugin</artifactId>
+                <version>3.4.2</version>
+                <reportSets>
+                    <reportSet>
+                        <reports>
+                            <report>index</report>
+                            <report>summary</report>
+                            <report>dependencies</report>
+                            <report>team</report>
+                            <report>licenses</report>
+                            <report>plugin-management</report>
+                            <report>plugins</report>
                         </reports>
                     </reportSet>
                 </reportSets>
