@@ -50,10 +50,12 @@ class SimpleHTTPHandler(BaseHTTPRequestHandler):
             response = {
                 'service': 'REW Audio Receiver',
                 'version': '1.0.0-simple',
-                'status': 'running',
+                'status': 'healthy',
                 'audio': {
                     'method': 'aplay',
                     'port': args.rtp_port,
+                    'sample_rate': '48000',
+                    'format': '48000Hz/16bit',
                     'running': True
                 },
                 'stats': stats.copy(),
