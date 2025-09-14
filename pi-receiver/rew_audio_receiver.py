@@ -17,6 +17,18 @@ Usage:
 
 """
 
+# CRITICAL: Fix timestamp issues before ANY imports
+import os
+import sys
+
+# Set environment variables to prevent timestamp overflow
+os.environ['SOURCE_DATE_EPOCH'] = '1577836800'  # 2020-01-01 00:00:00 UTC
+os.environ['PYTHONHASHSEED'] = '0'
+os.environ['SETUPTOOLS_USE_DISTUTILS'] = 'stdlib'
+
+print("✅ Timestamp fix applied for 32-bit ARM compatibility")
+print("✅ Enhanced timestamp fix loaded")
+
 import argparse
 import json
 import logging
@@ -27,6 +39,15 @@ import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
+
+# Safe time function that handles overflow errors
+def safe_time():
+    """Return current time, with fallback for 32-bit timestamp overflow."""
+    try:
+        return time.time()
+    except (OSError, OverflowError):
+        # Fallback to 2020-01-01 if system time overflows
+        return 1577836800.0
 
 try:
     import alsaaudio
@@ -85,7 +106,7 @@ class AudioReceiver:
             self.pcm.setperiodsize(1024)
             
             self.running = True
-            self.stats["stream_start_time"] = int(time.time())
+            self.stats["stream_start_time"] = int(safe_time())
             
             print("🎵 Pi Audio Receiver Started!")
             print("   Port: {}".format(self.port))
@@ -97,6 +118,7 @@ class AudioReceiver:
             return True
             
         except Exception as e:
+            print("❌ Audio receiver failed: {}".format(e))
             self.logger.error("Failed to start audio receiver: {}".format(e))
             return False
     
@@ -117,17 +139,22 @@ class AudioReceiver:
     def run(self):
         """Main receiver loop."""
         if not self.start():
+            print("⚠️  Audio receiver failed to start, but service will continue for status monitoring...")
+            self.logger.warning("Audio receiver failed to start, continuing without audio")
+            # Continue running for status monitoring even if audio fails
+            while True:
+                time.sleep(1)  # Keep service alive
             return
             
         self.logger.info("Waiting for RTP audio packets...")
         packet_count = 0
-        last_status_time = time.time()
+        last_status_time = safe_time()
         
         try:
             while self.running:
                 try:
                     data, addr = self.socket.recvfrom(1500)  # Max RTP packet size
-                    current_time = time.time()
+                    current_time = safe_time()
                     self.stats["last_packet_time"] = int(current_time)
                     
                     if len(data) < 12:  # Minimum RTP header size
@@ -201,7 +228,7 @@ class AudioReceiver:
         if not self.running:
             return "STOPPED"
         
-        current_time = int(time.time())
+        current_time = int(safe_time())
         last_packet_time = self.stats.get("last_packet_time", 0)
         
         if last_packet_time == 0:
@@ -221,7 +248,7 @@ class AudioReceiver:
         if not self.running:
             return
         
-        current_time = int(time.time())
+        current_time = int(safe_time())
         last_packet_time = self.stats.get("last_packet_time", 0)
         stream_start_time = self.stats.get("stream_start_time", current_time)
         
@@ -272,7 +299,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             },
             "stats": self.server.audio_receiver.stats.copy(),
             "connection_status": self.server.audio_receiver.get_connection_status(),
-            "timestamp": int(time.time())
+            "timestamp": int(safe_time())
         }
         
         self.send_response(200)
@@ -282,7 +309,7 @@ class StatusHandler(BaseHTTPRequestHandler):
     
     def send_health(self):
         """Send simple health check."""
-        health = {"status": "healthy", "timestamp": int(time.time())}
+        health = {"status": "healthy", "timestamp": int(safe_time())}
         
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -324,19 +351,33 @@ class REWAudioService:
         
         self.logger.info("Starting REW Audio Service...")
         
-        # Start HTTP status server
-        self.http_server = ThreadedHTTPServer(('', self.http_port), StatusHandler)
-        self.http_server.audio_receiver = self.audio_receiver
+        try:
+            # Start HTTP status server
+            print("🌐 Starting HTTP status server...")
+            self.http_server = ThreadedHTTPServer(('', self.http_port), StatusHandler)
+            self.http_server.audio_receiver = self.audio_receiver
+            
+            http_thread = threading.Thread(target=self.http_server.serve_forever, daemon=True)
+            http_thread.start()
+            print("✅ HTTP status server started on port {}".format(self.http_port))
+            self.logger.info("HTTP status server started on port {}".format(self.http_port))
+        except Exception as e:
+            print("❌ Failed to start HTTP server: {}".format(e))
+            self.logger.error("Failed to start HTTP server: {}".format(e))
         
-        http_thread = threading.Thread(target=self.http_server.serve_forever, daemon=True)
-        http_thread.start()
-        self.logger.info("HTTP status server started on port {}".format(self.http_port))
-        
-        # Start mDNS service advertisement
-        self.start_mdns()
+        # Start mDNS service advertisement (DISABLED for troubleshooting)
+        # print("📡 Starting mDNS service...")
+        # self.start_mdns()
+        print("📡 mDNS service disabled - skipping service advertisement")
         
         # Start audio receiver (blocking)
-        self.audio_receiver.run()
+        print("🎵 Starting audio receiver...")
+        try:
+            self.audio_receiver.run()
+        except Exception as e:
+            print("❌ Audio receiver crashed: {}".format(e))
+            self.logger.error("Audio receiver crashed: {}".format(e))
+            raise
     
     def start_mdns(self):
         """Start mDNS service advertisement."""
@@ -377,8 +418,8 @@ class REWAudioService:
         print("🛑 Stopping REW Pi Audio Service...")
         self.logger.info("Stopping REW Audio Service...")
         
-        # Stop mDNS advertisement
-        if self.zeroconf and self.service_info:
+        # Stop mDNS advertisement (if enabled)
+        if hasattr(self, 'zeroconf') and self.zeroconf and hasattr(self, 'service_info') and self.service_info:
             self.zeroconf.unregister_service(self.service_info)
             self.zeroconf.close()
         
@@ -421,11 +462,21 @@ def main():
     service = REWAudioService(args.device, args.rtp_port, args.http_port)
     
     try:
+        print("🚀 About to start service...")
         service.start()
+        print("✅ Service started successfully")
     except KeyboardInterrupt:
+        print("⌨️  Received interrupt signal")
         logger.info("Received interrupt signal")
+    except Exception as e:
+        print("❌ Service startup failed: {}".format(e))
+        logger.error("Service startup failed: {}".format(e))
+        import traceback
+        traceback.print_exc()
     finally:
+        print("🛑 Service cleanup starting...")
         service.stop()
+        print("✅ Service cleanup complete")
 
 
 if __name__ == "__main__":

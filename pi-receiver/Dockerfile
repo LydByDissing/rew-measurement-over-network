@@ -1,8 +1,15 @@
 # Multi-stage Dockerfile for REW Pi Audio Receiver
 # Supports both x86_64 (local testing) and armv6 (Raspberry Pi) architectures
 
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-slim AS base
+
+# CRITICAL: Set environment variables to fix 32-bit ARM timestamp overflow
+# This must be done before any Python operations that might import time module
+ENV SOURCE_DATE_EPOCH=1577836800
+ENV PYTHONHASHSEED=0
+ENV SETUPTOOLS_USE_DISTUTILS=stdlib
+ENV TZ=UTC
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -11,13 +18,14 @@ RUN apt-get update && apt-get install -y \
     portaudio19-dev \
     # Network and system tools
     alsa-utils \
-    pulseaudio-utils \
+#    pulseaudio-utils \
     avahi-daemon \
     avahi-utils \
     # Build dependencies (needed for some Python packages)
     build-essential \
     pkg-config \
     ninja-build \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -25,10 +33,10 @@ RUN groupadd -r rew && useradd -r -g rew -d /app -s /sbin/nologin rew
 
 
 # Install Python dependencies with ninja for faster builds
-ENV CMAKE_GENERATOR=Ninja
-RUN pip install --no-cache-dir --upgrade pip && \
-pip install --no-cache-dir --only-binary=:all: wheel setuptools || \
-pip install --no-cache-dir wheel setuptools
+#ENV CMAKE_GENERATOR=Ninja
+#RUN pip install --no-cache-dir --upgrade pip && \
+#pip install --no-cache-dir --only-binary=:all: wheel setuptools || \
+#pip install --no-cache-dir wheel setuptools
 
 
 FROM base AS core
@@ -45,10 +53,12 @@ RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # Copy application files
 COPY rew_audio_receiver.py .
+COPY fix_timestamp.py .
 COPY entrypoint.sh .
+COPY run_python.sh .
 
-# Make entrypoint executable
-RUN chmod +x entrypoint.sh
+# Make scripts executable
+RUN chmod +x entrypoint.sh run_python.sh
 
 # Create directories for audio output and logs
 RUN mkdir -p /tmp/audio /var/log/rew && \
@@ -68,10 +78,14 @@ ENV PYTHONHASHSEED=0
 ENV PYTHONIOENCODING=utf-8
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
-# ARM v6 specific compatibility settings
+# ARM v6 specific compatibility settings for time handling
 ENV TZ=UTC
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONFAULTHANDLER=1
+# Fix for 32-bit ARM time handling issues
+ENV SOURCE_DATE_EPOCH=1577836800
+ENV PYTHONHASHSEED=0
+ENV SETUPTOOLS_USE_DISTUTILS=stdlib
 # Application environment
 ENV RTP_PORT=5004
 ENV HTTP_PORT=8080

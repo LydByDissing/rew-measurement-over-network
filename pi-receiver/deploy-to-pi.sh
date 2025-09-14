@@ -222,11 +222,33 @@ export_image() {
     
     log "Exporting Docker image for platform: $platform"
     
-    # Build the image for the target platform
-    build_image "$platform"
+    # Check if we already have the correct architecture
+    local current_arch=$(docker inspect "${IMAGE_NAME}:latest" --format='{{.Architecture}}' 2>/dev/null || echo "none")
+    local target_arch=""
+    
+    case "$platform" in
+        "linux/arm/v6"|"linux/arm/v7") target_arch="arm" ;;
+        "linux/amd64") target_arch="amd64" ;;
+        *) target_arch="unknown" ;;
+    esac
+    
+    if [ "$current_arch" = "$target_arch" ]; then
+        log "Image already built for target architecture ($current_arch) - skipping rebuild"
+    else
+        log "Current architecture ($current_arch) != target ($target_arch) - building image for platform: $platform"
+        build_image "$platform"
+    fi
+    
+    # Clean up old local Docker images (keep only latest)
+    log "Cleaning up old local Docker images..."
+    docker images "${IMAGE_NAME}" --format "{{.Tag}}" | grep -E '^[0-9]{8}$|^[0-9]{8}-[0-9]{4}$' | head -n -3 | xargs -r -I {} docker rmi "${IMAGE_NAME}:{}" 2>/dev/null || true
     
     # Create export directory
     mkdir -p "$export_dir"
+    
+    # Clean up old tarballs first
+    log "Cleaning up old image tarballs..."
+    rm -f "$export_dir"/rew-pi-receiver-*.tar
     
     # Export the image as tarball
     log "Exporting image to tarball: $export_dir/$tarball_name"
@@ -243,8 +265,13 @@ export_image() {
         cp "$SCRIPT_DIR/.env.example" "$export_dir/.env"
     fi
     
-    # Create install script for Pi
-    cat > "$export_dir/install-from-tarball.sh" << 'EOF'
+    # Use our enhanced install script if it exists
+    if [ -f "$export_dir/install-from-tarball.sh" ]; then
+        log "Using existing enhanced install script"
+        chmod +x "$export_dir/install-from-tarball.sh"
+    else
+        log "Creating basic install script for Pi"
+        cat > "$export_dir/install-from-tarball.sh" << 'EOF'
 #!/bin/bash
 set -e
 
@@ -317,7 +344,8 @@ else
 fi
 EOF
     
-    chmod +x "$export_dir/install-from-tarball.sh"
+        chmod +x "$export_dir/install-from-tarball.sh"
+    fi
     
     success "Export package created in: $export_dir"
     echo "Contents:"
@@ -328,20 +356,21 @@ EOF
     echo "2. ssh pi@pi-ip 'cd ~/rew-deployment && ./install-from-tarball.sh'"
 }
 
-# Deploy tarball to remote Pi
-deploy_tarball() {
+
+# Deploy to remote Pi using Docker image tarball (renamed from deploy_tarball)
+deploy_remote() {
     local ssh_target="$1"
     
     if [ -z "$ssh_target" ]; then
         error "SSH target not specified"
-        echo "Usage: $0 deploy-tarball user@hostname"
+        echo "Usage: $0 deploy-remote user@hostname"
         exit 1
     fi
     
     # Parse SSH target
     parse_ssh_target "$ssh_target"
     
-    log "Deploying via tarball to remote Pi: $SSH_TARGET"
+    log "Deploying Docker image to remote Pi: $SSH_TARGET"
     
     # Check if export directory exists
     local export_dir="$SCRIPT_DIR/export"
@@ -381,89 +410,21 @@ deploy_tarball() {
     ssh $ssh_opts $ssh_key "$SSH_TARGET" "mkdir -p ~/rew-deployment"
     
     # Transfer deployment package
-    log "Transferring deployment package..."
+    log "Transferring Docker deployment package..."
     scp $ssh_opts $ssh_key -r "$export_dir"/* "$SSH_TARGET:~/rew-deployment/"
     
     success "Deployment package transferred"
     
     # Execute remote installation
-    log "Installing on remote Pi..."
+    log "Installing Docker container on remote Pi..."
     ssh $ssh_opts $ssh_key "$SSH_TARGET" "cd ~/rew-deployment && ./install-from-tarball.sh"
     
-    success "Tarball deployment completed!"
+    success "Docker container deployment completed!"
     echo
     echo "🔗 Next Steps:"
     echo "1. SSH to Pi: ssh $SSH_TARGET"
     echo "2. Check status: curl http://$SSH_HOST:8080/status"
     echo "3. View logs: cd ~/rew-deployment && docker compose logs -f"
-}
-
-# Deploy to remote Pi
-deploy_remote() {
-    local ssh_target="$1"
-    
-    if [ -z "$ssh_target" ]; then
-        error "SSH target not specified"
-        echo "Usage: $0 deploy-remote user@hostname"
-        exit 1
-    fi
-    
-    log "Deploying to remote Pi: $ssh_target"
-    
-    # Create deployment package
-    local temp_dir=$(mktemp -d)
-    log "Creating deployment package in $temp_dir"
-    
-    cp -r "$SCRIPT_DIR"/* "$temp_dir/"
-    
-    # Create deployment script
-    cat > "$temp_dir/remote-deploy.sh" << 'EOF'
-#!/bin/bash
-set -e
-
-echo "🥧 REW Pi Audio Receiver - Remote Deployment"
-echo "============================================"
-
-# Update system packages
-echo "Updating system packages..."
-sudo apt-get update
-
-# Install Docker if not present
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Installing Docker..."
-    curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
-fi
-
-# Install Docker Compose if not present
-if ! command -v docker-compose >/dev/null 2>&1 && ! docker compose version >/dev/null 2>&1; then
-    echo "Installing Docker Compose..."
-    sudo apt-get install -y docker-compose-plugin
-fi
-
-# Build and deploy
-echo "Building and deploying REW Pi Audio Receiver..."
-./deploy-to-pi.sh build-pi
-./deploy-to-pi.sh deploy
-
-echo "🎉 Deployment complete!"
-echo "The REW Pi Audio Receiver is now running."
-EOF
-    
-    chmod +x "$temp_dir/remote-deploy.sh"
-    
-    # Transfer files
-    log "Transferring files to Pi..."
-    scp -r "$temp_dir"/* "$ssh_target:~/rew-receiver/"
-    
-    # Execute remote deployment
-    log "Executing remote deployment..."
-    ssh "$ssh_target" "cd ~/rew-receiver && ./remote-deploy.sh"
-    
-    # Cleanup
-    rm -rf "$temp_dir"
-    
-    success "Remote deployment completed successfully"
 }
 
 # Show container logs
@@ -593,11 +554,6 @@ main() {
                 ssh_target="$2"
                 shift 2
                 ;;
-            deploy-tarball)
-                command="deploy-tarball"
-                ssh_target="$2"
-                shift 2
-                ;;
             *)
                 error "Unknown argument: $1"
                 show_usage
@@ -631,9 +587,6 @@ main() {
             ;;
         deploy-remote)
             deploy_remote "$ssh_target"
-            ;;
-        deploy-tarball)
-            deploy_tarball "$ssh_target"
             ;;
         start)
             start_container

@@ -6,20 +6,19 @@ The REW Pi Audio Receiver Docker container eliminates compilation issues and pro
 
 ## Quick Start
 
-### For Raspberry Pi Deployment
+### For Raspberry Pi Deployment (Recommended)
 
-1. **Copy files to Pi:**
-   ```bash
-   scp -r pi-receiver/ pi@your-pi-ip:~/rew-receiver/
-   ```
+**Single command deployment using Docker image:**
+```bash
+cd pi-receiver
+./deploy-to-pi.sh deploy-remote pi@your-pi-ip
+```
 
-2. **Deploy on Pi:**
-   ```bash
-   ssh pi@your-pi-ip
-   cd ~/rew-receiver
-   ./deploy-to-pi.sh build-pi
-   ./deploy-to-pi.sh deploy
-   ```
+This will:
+1. Build the ARM Docker image locally
+2. Export it as a tarball
+3. Transfer the tarball to your Pi
+4. Install and start the container automatically
 
 ### For Local Testing (x86)
 
@@ -92,7 +91,8 @@ The `deploy-to-pi.sh` script provides comprehensive container management:
 ### Deployment Commands
 ```bash
 ./deploy-to-pi.sh deploy                    # Deploy locally
-./deploy-to-pi.sh deploy-remote pi@ip       # Deploy to remote Pi via SSH
+./deploy-to-pi.sh deploy-remote pi@ip       # Deploy Docker image to remote Pi
+./deploy-to-pi.sh export                    # Export Docker image for manual transfer
 ```
 
 ### Management Commands  
@@ -283,10 +283,7 @@ curl http://localhost:8080/status
 
 ### 2. Pi Testing
 ```bash
-# Build ARM version
-./deploy-to-pi.sh build-pi
-
-# Deploy to Pi
+# Deploy Docker image directly to Pi (builds ARM version automatically)
 ./deploy-to-pi.sh deploy-remote pi@192.168.1.100
 ```
 
@@ -298,6 +295,38 @@ cd ../
 ```
 
 This runs the full Java Bridge + Pi receiver integration test with containers.
+
+## Docker Image Deployment Process
+
+The deployment script uses a **Docker image tarball method** for reliable Pi deployment:
+
+### How it Works
+1. **Build ARM image** locally (cross-compilation)
+2. **Export as tarball** - `docker save` creates a portable image file
+3. **Transfer to Pi** - SCP the tarball + installation scripts
+4. **Load & Start** - Pi loads the image and starts the container
+
+### Benefits
+- ✅ **No compilation on Pi** - Image built on powerful development machine
+- ✅ **Consistent deployments** - Same image works across different Pi models
+- ✅ **Offline capable** - Once transferred, no internet needed on Pi
+- ✅ **Version control** - Easy rollback with dated image tags
+- ✅ **Fast updates** - Only transfer image differences
+
+### Manual Export (Advanced)
+For air-gapped or multiple Pi deployments:
+
+```bash
+# Export deployment package
+./deploy-to-pi.sh export
+
+# Copy to USB/network storage
+cp -r export/ /media/usb/rew-deployment/
+
+# Install on each Pi
+scp -r /media/usb/rew-deployment/ pi@pi-ip:~/
+ssh pi@pi-ip "cd ~/rew-deployment && ./install-from-tarball.sh"
+```
 
 ## Production Deployment
 

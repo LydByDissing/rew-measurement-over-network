@@ -1,0 +1,23 @@
+{
+  "service": "REW Audio Receiver",
+  "version": "1.0.0-simple",
+  "status": "healthy",
+  "audio": {
+    "method": "aplay",
+    "port": 5004,
+    "sample_rate": "48000",
+    "format": "48000Hz/16bit",
+    "running": true
+  },
+  "stats": {
+    "packets_received": 3548,
+    "bytes_received": 3448656,
+    "errors": 0,
+    "last_sequence": 3547,
+    "start_time": 1757265359.5275054,
+    "connected": true,
+    "connection_time": 1757265359,
+    "last_sender": "192.168.100.10"
+  },
+  "timestamp": 1757265377
+}

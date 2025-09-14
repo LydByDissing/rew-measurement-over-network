@@ -1,0 +1,31 @@
+# ARM Emulation Files (large VM images and kernels)
+arm-emulation/
+*.img
+*.xz
+qemu-rpi-kernel/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Docker build artifacts
+.dockerignore.bak
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db

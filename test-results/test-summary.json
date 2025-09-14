@@ -1,0 +1,11 @@
+{
+  "test_start_time": 1757265369,
+  "test_end_time": 1757265380,
+  "tests_passed": 14,
+  "tests_failed": 0,
+  "java_bridge_ip": "192.168.100.10",
+  "pi1_ip": "192.168.100.11", 
+  "pi2_ip": "192.168.100.12",
+  "network": "192.168.100.0/24",
+  "overall_result": "PASS"
+}

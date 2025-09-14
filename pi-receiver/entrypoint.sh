@@ -6,6 +6,11 @@
 
 set -e
 
+# Fix for 32-bit ARM timestamp issues (Pi Zero/1)
+export SOURCE_DATE_EPOCH=1577836800
+export PYTHONHASHSEED=0
+export SETUPTOOLS_USE_DISTUTILS=stdlib
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -164,9 +169,9 @@ main() {
     success "Initialization complete - starting audio receiver"
     echo
     
-    # Start the Python receiver with provided arguments
-    log "Executing: python rew_audio_receiver.py $*"
-    python rew_audio_receiver.py "$@" &
+    # Start the Python receiver with provided arguments using timestamp-safe wrapper
+    log "Executing: ./run_python.sh rew_audio_receiver.py $*"
+    ./run_python.sh rew_audio_receiver.py "$@" &
     PYTHON_PID=$!
     
     # Wait for the process
