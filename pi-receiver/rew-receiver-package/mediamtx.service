@@ -1,0 +1,35 @@
+[Unit]
+Description=MediaMTX Media Server
+Documentation=https://github.com/bluenviron/mediamtx
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=audio
+ExecStart=/home/pi/rew-receiver/mediamtx /home/pi/rew-receiver/mediamtx.yml
+WorkingDirectory=/home/pi/rew-receiver
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/mediamtx /home/pi/rew-receiver
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits for Pi Zero
+MemoryMax=128M
+CPUQuota=50%
+
+# Environment
+Environment=GOMAXPROCS=1
+
+[Install]
+WantedBy=multi-user.target

@@ -58,7 +58,7 @@ public class HeadlessRunner {
             startStatusMonitoring();
             
             System.out.println("\n=== REW Network Audio Bridge - Headless Mode ===");
-            System.out.println("Connected to Pi: " + options.getTargetIp() + ":" + options.getTargetPort());
+            System.out.println("Target Pi: " + options.getTargetIp() + " (RTP:" + options.getTargetPort() + ", API:9997)");
             System.out.println("Audio Interface: " + audioBridgeService.getAudioSystemDescription());
             System.out.println("REW Setup: Select '" + audioBridgeService.getVirtualDeviceName() 
                 + "' as output device");

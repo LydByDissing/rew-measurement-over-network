@@ -1,0 +1,36 @@
+# CamillaDSP Configuration for Container
+devices:
+  samplerate: 48000
+  chunksize: 1024
+  
+  capture:
+    type: Alsa
+    channels: 2
+    device: "default"
+    format: S16LE
+    
+  playback:
+    type: Alsa  
+    channels: 2
+    device: "default"
+    format: S16LE
+
+# Simple passthrough mixer
+mixers:
+  main:
+    channels:
+      in: 2
+      out: 2
+    mapping:
+      - dest: 0
+        sources:
+          - channel: 0
+            gain: 0.0
+      - dest: 1
+        sources:
+          - channel: 1
+            gain: 0.0
+
+pipeline:
+  - type: Mixer
+    name: main

@@ -1,0 +1,27 @@
+# MediaMTX Configuration for REW Audio Receiver Container
+logLevel: debug
+logDestinations: [stdout]
+
+# API for remote control
+api: true
+apiAddress: 0.0.0.0:9997
+
+# Disable API authentication for internal health checks
+authMethod: internal
+authInternalUsers: []
+
+# RTSP server
+rtspAddress: 0.0.0.0:8554
+
+# RTP server
+rtpAddress: 0.0.0.0:8000
+
+# Path configuration for RTP streams
+paths:
+  all_others:
+  
+  # REW RTP audio stream path
+  rew_audio:
+    # Accept RTP streams on port 5004 (Java app default)
+    source: rtp://0.0.0.0:5004
+    sourceProtocol: rtp

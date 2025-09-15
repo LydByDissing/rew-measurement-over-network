@@ -1,0 +1,39 @@
+[Unit]
+Description=CamillaDSP Audio Processor
+Documentation=https://github.com/HEnquist/camilladsp
+After=network.target mediamtx.service
+Wants=mediamtx.service
+
+[Service]
+Type=simple
+User=pi
+Group=audio
+ExecStart=/home/pi/rew-receiver/camilladsp -p 1234 /home/pi/rew-receiver/camilladsp.yml
+WorkingDirectory=/home/pi/rew-receiver
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Ensure ALSA loopback is available
+ExecStartPre=/bin/bash -c 'modprobe snd-aloop || true'
+
+# Security settings
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/home/pi/rew-receiver
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits for Pi Zero
+MemoryMax=64M
+CPUQuota=30%
+
+# Audio access
+SupplementaryGroups=audio
+
+[Install]
+WantedBy=multi-user.target

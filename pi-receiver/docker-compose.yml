@@ -1,0 +1,69 @@
+# Docker Compose for REW MediaMTX Audio Receiver
+# Works on both x86_64 (testing) and ARM (Pi deployment)
+
+services:
+  rew-mediamtx-receiver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm/v6
+    image: rew-mediamtx-receiver:latest
+    container_name: rew-mediamtx-audio-receiver
+    hostname: ${PI_HOSTNAME:-rew-pi}
+    
+    # Port mapping for MediaMTX services
+    ports:
+      - "9997:9997"   # MediaMTX API
+      - "8554:8554"   # RTSP
+      - "5004:5004/udp" # RTP input
+      - "1234:1234"   # CamillaDSP API 
+      - "8000:8000/udp" # RTP server
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Volume mounts for audio and logging
+    volumes:
+      # Audio system access (try both PulseAudio and ALSA)
+      - /dev/snd:/dev/snd:rw
+      - /run/user/1000/pulse:/run/user/1000/pulse:ro
+      - /var/lib/alsa:/var/lib/alsa:ro
+      
+      # Logs persistence  
+      - ./logs:/app/logs
+      
+      # Audio output for debugging
+      - ./audio-output:/tmp/audio
+      
+      # Optional: Configuration overrides (only mount if ./config directory exists)
+      # - ./config:/app/config:ro
+    
+    # Environment variables
+    environment:
+      - PI_HOSTNAME=${PI_HOSTNAME:-rew-pi}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - PULSE_SERVER=unix:/run/user/1000/pulse/native
+    
+    # User matching PipeWire user
+    user: "1000:1000"
+    
+    # Resource limits (adjust for Pi model)
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1'
+        reservations:
+          memory: 64M
+          cpus: '1'
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

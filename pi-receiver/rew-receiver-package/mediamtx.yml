@@ -1,0 +1,79 @@
+# MediaMTX Configuration for REW Audio Receiver
+# Optimized for Raspberry Pi Zero ARM v6 with CamillaDSP integration
+
+# General server settings
+logLevel: info
+logDestinations: [stdout]
+logFile: /var/log/mediamtx/mediamtx.log
+
+# API settings for remote control
+api: yes
+apiAddress: 0.0.0.0:9997
+
+# Metrics for monitoring
+metrics: yes
+metricsAddress: 0.0.0.0:9998
+
+# RTSP server settings
+rtspAddress: 0.0.0.0:8554
+rtspEncryption: "no"
+rtspAllowOrigin: "*"
+
+# RTP server settings for direct RTP streaming
+rtpAddress: 0.0.0.0:8000
+
+# WebRTC settings (optional for browser access)
+webrtcAddress: 0.0.0.0:8889
+webrtcAllowOrigin: "*"
+
+# HLS settings for HTTP streaming
+hlsAddress: 0.0.0.0:8888
+hlsAllowOrigin: "*"
+
+# Path configurations
+paths:
+  # Main REW audio stream path
+  rew_audio:
+    # Accept RTP stream from REW on port 5004
+    source: rtp://0.0.0.0:5004
+    
+    # Run command when stream starts - route to ALSA loopback
+    runOnReady: >
+      ffmpeg -re -i rtsp://localhost:8554/rew_audio 
+      -f alsa -ac 2 -ar 48000 hw:Loopback,0,0
+    
+    # Run command when stream ends - cleanup
+    runOnNotReady: pkill -f "ffmpeg.*hw:Loopback"
+    
+    # Authentication (disable for now)
+    publishUser: ""
+    publishPass: ""
+    readUser: ""
+    readPass: ""
+    
+    # Recording settings (optional)
+    record: no
+    # recordPath: /var/log/mediamtx/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+    
+  # Test stream for validation
+  test_tone:
+    # Generate test tone for validation
+    source: >
+      ffmpeg -re -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=3600"
+      -c:a pcm_s16le -f rtsp rtsp://localhost:8554/test_tone
+    
+    # Route test tone to loopback as well
+    runOnReady: >
+      ffmpeg -re -i rtsp://localhost:8554/test_tone 
+      -f alsa -ac 2 -ar 48000 hw:Loopback,0,0
+    
+    runOnNotReady: pkill -f "ffmpeg.*test_tone"
+
+# Performance optimizations for Pi Zero
+readTimeout: 10s
+writeTimeout: 10s
+readBufferCount: 512
+writeBufferCount: 512
+
+# UDP settings
+udpMaxPayloadSize: 1472

@@ -1,100 +1,82 @@
-# Multi-stage Dockerfile for REW Pi Audio Receiver
-# Supports both x86_64 (local testing) and armv6 (Raspberry Pi) architectures
+# Dockerfile for REW MediaMTX + CamillaDSP Audio Receiver
+# Using Alpine with glibc compatibility for CamillaDSP
 
-ARG PYTHON_VERSION=3.11
-FROM python:${PYTHON_VERSION}-slim AS base
+FROM alpine:3.18
 
-# CRITICAL: Set environment variables to fix 32-bit ARM timestamp overflow
-# This must be done before any Python operations that might import time module
-ENV SOURCE_DATE_EPOCH=1577836800
-ENV PYTHONHASHSEED=0
-ENV SETUPTOOLS_USE_DISTUTILS=stdlib
-ENV TZ=UTC
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    # Audio system dependencies
-    libasound2-dev \
-    portaudio19-dev \
-    # Network and system tools
+# Install glibc compatibility and runtime dependencies
+RUN apk add --no-cache \
+    alsa-lib \
     alsa-utils \
-#    pulseaudio-utils \
-    avahi-daemon \
-    avahi-utils \
-    # Build dependencies (needed for some Python packages)
-    build-essential \
-    pkg-config \
-    ninja-build \
-    vim \
-    && rm -rf /var/lib/apt/lists/*
+    ffmpeg \
+    ca-certificates \
+    tzdata \
+    tini \
+    wget \
+    curl \
+    net-tools \
+    gcompat \
+    libstdc++
 
-# Create non-root user for security
-RUN groupadd -r rew && useradd -r -g rew -d /app -s /sbin/nologin rew
+# Create app user
+RUN addgroup -g 1000 rew && adduser -u 1000 -G rew -s /bin/sh -D rew
 
+# Create directories
+RUN mkdir -p /app/config /app/logs /tmp/audio && \
+    chown -R rew:rew /app /tmp/audio
 
-# Install Python dependencies with ninja for faster builds
-#ENV CMAKE_GENERATOR=Ninja
-#RUN pip install --no-cache-dir --upgrade pip && \
-#pip install --no-cache-dir --only-binary=:all: wheel setuptools || \
-#pip install --no-cache-dir wheel setuptools
+# Download binaries based on architecture
+ARG TARGETARCH
+ARG MEDIAMTX_VERSION=v1.12.3
+ARG CAMILLADSP_VERSION=v3.0.1
 
+WORKDIR /tmp
 
-FROM base AS core
+# Download and install MediaMTX
+RUN case ${TARGETARCH:-amd64} in \
+    amd64) ARCH="amd64" ;; \
+    arm) ARCH="armv6" ;; \
+    arm64) ARCH="arm64v8" ;; \
+    *) ARCH="amd64" ;; \
+    esac && \
+    wget -O mediamtx.tar.gz "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_linux_${ARCH}.tar.gz" && \
+    tar xzf mediamtx.tar.gz && \
+    cp mediamtx /usr/local/bin/ && \
+    chmod +x /usr/local/bin/mediamtx
 
-RUN touch /.dockerenv
+# Download and install CamillaDSP with glibc compatibility
+RUN case ${TARGETARCH:-amd64} in \
+    amd64) ARCH="amd64" ;; \
+    arm) ARCH="armv6" ;; \
+    arm64) ARCH="aarch64" ;; \
+    *) ARCH="amd64" ;; \
+    esac && \
+    wget -O camilladsp.tar.gz "https://github.com/HEnquist/camilladsp/releases/download/${CAMILLADSP_VERSION}/camilladsp-linux-${ARCH}.tar.gz" && \
+    tar xzf camilladsp.tar.gz && \
+    cp camilladsp /usr/local/bin/ && \
+    chmod +x /usr/local/bin/camilladsp && \
+    rm -f camilladsp.tar.gz
 
-# Set working directory
+# Copy configuration files
+COPY mediamtx.yml /app/config/mediamtx.yml
+COPY camilladsp.yml /app/config/camilladsp.yml
+
+# Copy startup script and audio test utility
+COPY start.sh /app/start.sh
+COPY test-audio.sh /app/test-audio.sh
+
+RUN chmod +x /app/start.sh /app/test-audio.sh && chown -R rew:rew /app
+
+# Switch to app user
+USER rew
 WORKDIR /app
 
-# Copy requirements first for better Docker layer caching
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
-
-# Copy application files
-COPY rew_audio_receiver.py .
-COPY fix_timestamp.py .
-COPY entrypoint.sh .
-COPY run_python.sh .
-
-# Make scripts executable
-RUN chmod +x entrypoint.sh run_python.sh
-
-# Create directories for audio output and logs
-RUN mkdir -p /tmp/audio /var/log/rew && \
-    chown -R rew:rew /app /tmp/audio /var/log/rew
-
-# Switch to non-root user
-USER rew
+# Expose ports
+EXPOSE 8554/tcp 9997/tcp 1234/tcp 5004/udp 8000/udp
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(('0.0.0.0', 5004)); s.close()" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q --spider http://localhost:9997/v3/config || exit 1
 
-# Default environment variables with ARM v6 compatibility
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONHASHSEED=0
-ENV PYTHONIOENCODING=utf-8
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-# ARM v6 specific compatibility settings for time handling
-ENV TZ=UTC
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONFAULTHANDLER=1
-# Fix for 32-bit ARM time handling issues
-ENV SOURCE_DATE_EPOCH=1577836800
-ENV PYTHONHASHSEED=0
-ENV SETUPTOOLS_USE_DISTUTILS=stdlib
-# Application environment
-ENV RTP_PORT=5004
-ENV HTTP_PORT=8080
-ENV AUDIO_DEVICE=default
-ENV LOG_LEVEL=INFO
-
-# Expose ports
-EXPOSE 5004/udp 8080/tcp 5353/udp
-
-# Default command
-ENTRYPOINT ["./entrypoint.sh"]
-CMD ["--device", "default", "--rtp-port", "5004", "--http-port", "8080", "--verbose"]
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["./start.sh"]

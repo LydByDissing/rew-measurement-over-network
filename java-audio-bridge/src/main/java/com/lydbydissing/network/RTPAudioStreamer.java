@@ -9,7 +9,12 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -37,6 +42,9 @@ public class RTPAudioStreamer {
     /** Default RTP port for audio streaming. */
     public static final int DEFAULT_RTP_PORT = 5004;
     
+    /** Default MediaMTX API port. */
+    public static final int DEFAULT_MEDIAMTX_API_PORT = 9997;
+    
     /** Maximum RTP packet size (excluding headers). */
     private static final int MAX_PACKET_SIZE = 1200;
     
@@ -50,6 +58,7 @@ public class RTPAudioStreamer {
     private InetAddress targetAddress;
     private int targetPort;
     private AudioFormat audioFormat;
+    private HttpClient httpClient;
     
     private final AtomicBoolean isStreaming = new AtomicBoolean(false);
     private final AtomicLong sequenceNumber = new AtomicLong(0);
@@ -90,6 +99,11 @@ public class RTPAudioStreamer {
         
         // Create UDP socket
         this.socket = new DatagramSocket();
+        
+        // Create HTTP client for MediaMTX API health checks
+        this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(3))
+            .build();
         
         LOGGER.info("Created RTP streamer for {}:{} with format: {}", 
                    targetAddress.getHostAddress(), targetPort, formatToString(audioFormat));
@@ -337,20 +351,45 @@ public class RTPAudioStreamer {
     }
     
     /**
-     * Gets the connection status string.
+     * Gets the real connection status by checking MediaMTX API.
      * 
      * @return Connection status description
      */
     private String getConnectionStatus() {
-        long now = System.currentTimeMillis();
-        long timeSinceLastSend = now - lastSuccessfulSend;
-        
-        if (timeSinceLastSend < 1000) {
-            return "GOOD";
-        } else if (timeSinceLastSend < 5000) {
-            return "SLOW";
-        } else {
-            return "DISCONNECTED";
+        try {
+            // Check MediaMTX API health
+            URI apiUri = URI.create(String.format("http://%s:%d/v3/config", 
+                targetAddress.getHostAddress(), DEFAULT_MEDIAMTX_API_PORT));
+            
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(apiUri)
+                .timeout(Duration.ofSeconds(2))
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, 
+                HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200 || response.statusCode() == 401) {
+                // MediaMTX is running and responsive (200=OK, 401=needs auth but alive)
+                long now = System.currentTimeMillis();
+                long timeSinceLastSend = now - lastSuccessfulSend;
+                
+                if (timeSinceLastSend < 1000) {
+                    return "CONNECTED";
+                } else if (timeSinceLastSend < 5000) {
+                    return "SLOW";
+                } else {
+                    return "API_ONLY"; // MediaMTX running but not receiving RTP
+                }
+            } else {
+                return "API_ERROR";
+            }
+            
+        } catch (Exception e) {
+            // MediaMTX API not accessible
+            LOGGER.trace("MediaMTX API health check failed: {}", e.getMessage());
+            return "OFFLINE";
         }
     }
     
