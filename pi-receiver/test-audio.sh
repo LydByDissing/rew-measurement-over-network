@@ -50,6 +50,41 @@ check_container_environment() {
     else
         warning "Not running as root - audio device access may be limited"
     fi
+
+    # Check audio group membership
+    if groups | grep -q audio; then
+        success "User is member of audio group"
+    else
+        warning "User is not member of audio group - audio access may be limited"
+    fi
+
+    # Check PulseAudio environment
+    if [ -n "$PULSE_SERVER" ]; then
+        success "PULSE_SERVER environment variable set: $PULSE_SERVER"
+
+        # Test PulseAudio socket accessibility
+        if [ -S "/run/user/1000/pulse/native" ]; then
+            success "PulseAudio socket is accessible"
+        else
+            warning "PulseAudio socket not found at /run/user/1000/pulse/native"
+        fi
+    else
+        warning "PULSE_SERVER environment variable not set"
+    fi
+
+    # Check shared memory access
+    if [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
+        success "Shared memory (/dev/shm) is accessible"
+    else
+        warning "Shared memory (/dev/shm) not accessible - may affect audio performance"
+    fi
+
+    # Check ALSA shared config
+    if [ -d "/usr/share/alsa" ]; then
+        success "ALSA configuration directory is mounted"
+    else
+        warning "ALSA configuration directory not found - ALSA may not work properly"
+    fi
 }
 
 # Test ALSA subsystem
@@ -90,6 +125,51 @@ test_alsa_system() {
     return 0
 }
 
+# Test PulseAudio subsystem
+test_pulseaudio_system() {
+    log "Testing PulseAudio subsystem..."
+
+    # Check if PulseAudio tools are available
+    if ! command -v paplay &> /dev/null; then
+        warning "paplay command not found - PulseAudio tools not installed"
+        return 1
+    fi
+
+    # Test PulseAudio connection
+    if pactl info >/dev/null 2>&1; then
+        success "PulseAudio connection successful"
+
+        # List PulseAudio sinks
+        log "Available PulseAudio sinks:"
+        pactl list short sinks 2>/dev/null || warning "Could not list PulseAudio sinks"
+
+        # Test PulseAudio playback
+        log "Testing PulseAudio playback..."
+        if paplay --duration=1 /dev/zero 2>/dev/null; then
+            success "PulseAudio playback test successful"
+            return 0
+        else
+            error "PulseAudio playback test failed"
+            return 1
+        fi
+    else
+        error "Cannot connect to PulseAudio server"
+        log "Checking PULSE_SERVER setting: ${PULSE_SERVER:-not set}"
+
+        # Check if socket exists
+        if [ -n "$PULSE_SERVER" ] && echo "$PULSE_SERVER" | grep -q "unix:"; then
+            local socket_path=$(echo "$PULSE_SERVER" | sed 's/unix://')
+            if [ -S "$socket_path" ]; then
+                warning "Socket exists but connection failed - check permissions"
+            else
+                error "PulseAudio socket not found: $socket_path"
+            fi
+        fi
+
+        return 1
+    fi
+}
+
 # Test tone generation and playback
 test_tone_generation() {
     local device=${1:-"default"}
@@ -112,7 +192,19 @@ test_tone_generation() {
         success "Tone generation completed successfully"
         return 0
     else
-        error "Tone generation failed"
+        warning "speaker-test failed, trying alternative devices..."
+
+        # Try common device alternatives
+        for alt_device in "hw:0,0" "hw:1,0" "plughw:0,0" "pulse"; do
+            log "Trying device: $alt_device"
+            if speaker-test -D "$alt_device" -c $CHANNELS -r $SAMPLE_RATE -t sine -f "$freq" -l 1 -p "${duration}000" 2>/dev/null; then
+                success "Tone generation completed successfully with device: $alt_device"
+                echo "💡 Consider using device '$alt_device' in your configuration"
+                return 0
+            fi
+        done
+
+        error "All tone generation attempts failed"
         return 1
     fi
 }
@@ -280,29 +372,34 @@ test_full_system() {
     log "Running full system audio test..."
 
     local success_count=0
-    local total_tests=5
+    local total_tests=6
 
     # Test 1: ALSA System
     if test_alsa_system; then
         ((success_count++))
     fi
 
-    # Test 2: ALSA Loopback
+    # Test 2: PulseAudio System
+    if test_pulseaudio_system; then
+        ((success_count++))
+    fi
+
+    # Test 3: ALSA Loopback
     if test_alsa_loopback; then
         ((success_count++))
     fi
 
-    # Test 3: Tone Generation
+    # Test 4: Tone Generation
     if test_tone_generation "default"; then
         ((success_count++))
     fi
 
-    # Test 4: CamillaDSP
+    # Test 5: CamillaDSP
     if test_camilladsp_integration; then
         ((success_count++))
     fi
 
-    # Test 5: MediaMTX
+    # Test 6: MediaMTX
     if test_mediamtx_integration; then
         ((success_count++))
     fi
@@ -329,26 +426,28 @@ show_test_menu() {
     log "===== AUDIO TEST UTILITY ====="
     echo "1) Full System Test (recommended)"
     echo "2) ALSA System Test"
-    echo "3) ALSA Loopback Test"
-    echo "4) Play Test Tone (default device)"
-    echo "5) Play Test Tone (loopback device)"
-    echo "6) CamillaDSP Integration Test"
-    echo "7) MediaMTX Integration Test"
-    echo "8) Environment Check"
-    echo "9) Exit"
+    echo "3) PulseAudio System Test"
+    echo "4) ALSA Loopback Test"
+    echo "5) Play Test Tone (default device)"
+    echo "6) Play Test Tone (loopback device)"
+    echo "7) CamillaDSP Integration Test"
+    echo "8) MediaMTX Integration Test"
+    echo "9) Environment Check"
+    echo "0) Exit"
     echo
-    read -p "Select test (1-9): " choice
+    read -p "Select test (0-9): " choice
 
     case $choice in
         1) test_full_system ;;
         2) test_alsa_system ;;
-        3) test_alsa_loopback ;;
-        4) test_tone_generation "default" ;;
-        5) test_tone_generation "hw:Loopback,0,0" ;;
-        6) test_camilladsp_integration ;;
-        7) test_mediamtx_integration ;;
-        8) check_container_environment ;;
-        9) log "Exiting..."; exit 0 ;;
+        3) test_pulseaudio_system ;;
+        4) test_alsa_loopback ;;
+        5) test_tone_generation "default" ;;
+        6) test_tone_generation "hw:Loopback,0,0" ;;
+        7) test_camilladsp_integration ;;
+        8) test_mediamtx_integration ;;
+        9) check_container_environment ;;
+        0) log "Exiting..."; exit 0 ;;
         *) error "Invalid choice"; show_test_menu ;;
     esac
 }
@@ -364,6 +463,9 @@ main() {
             ;;
         "alsa")
             test_alsa_system
+            ;;
+        "pulseaudio"|"pulse")
+            test_pulseaudio_system
             ;;
         "loopback")
             test_alsa_loopback
@@ -386,6 +488,7 @@ main() {
             echo "Test Types:"
             echo "  full      - Run all tests (default)"
             echo "  alsa      - Test ALSA audio system"
+            echo "  pulseaudio - Test PulseAudio system"
             echo "  loopback  - Test ALSA loopback device"
             echo "  tone      - Play test tone [device] [freq] [duration]"
             echo "  camilladsp - Test CamillaDSP integration"

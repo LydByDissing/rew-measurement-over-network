@@ -28,8 +28,8 @@ services:
     volumes:
       # Audio system access (try both PulseAudio and ALSA)
       - /dev/snd:/dev/snd:rw
-      - /run/user/1000/pulse:/run/user/1000/pulse:ro
-      - /var/lib/alsa:/var/lib/alsa:ro
+      #- /run/user/1000/pulse:/run/user/1000/pulse:ro
+      #- /var/lib/alsa:/var/lib/alsa:ro
       
       # Logs persistence  
       - ./logs:/app/logs
