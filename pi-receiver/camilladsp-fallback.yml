@@ -1,4 +1,4 @@
-# CamillaDSP Configuration for Raspberry Pi with ALSA loopback
+# CamillaDSP Minimal Configuration - bypasses ALSA enumeration issues
 devices:
   samplerate: 48000
   chunksize: 2048
@@ -9,7 +9,7 @@ devices:
   capture:
     type: Alsa
     channels: 2
-    device: "hw:Loopback,1,0"
+    device: "hw:1,1"
     format: S16LE
 
   playback:

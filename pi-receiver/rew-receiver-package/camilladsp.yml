@@ -1,28 +1,26 @@
-# CamillaDSP Configuration for REW Audio Processing
-# Integrates with MediaMTX via ALSA loopback device
-
+# CamillaDSP Configuration for Raspberry Pi with ALSA loopback
 devices:
   samplerate: 48000
-  chunksize: 1024
-  queuelimit: 4
+  chunksize: 2048
+  enable_rate_adjust: false
   silence_threshold: -60
   silence_timeout: 3.0
-  
+
   capture:
     type: Alsa
     channels: 2
-    device: "hw:Loopback,1,0"  # Input from MediaMTX via loopback
+    device: "hw:Loopback,1,0"
     format: S16LE
-    
+
   playback:
     type: Alsa
     channels: 2
-    device: "default"          # Default audio output device
+    device: "hw:0,0"
     format: S16LE
 
-# Mixer configuration - route input channels to outputs
+# Simple passthrough mixer
 mixers:
-  output_mixer:
+  main:
     channels:
       in: 2
       out: 2
@@ -31,56 +29,11 @@ mixers:
         sources:
           - channel: 0
             gain: 0.0
-            inverted: false
       - dest: 1
         sources:
           - channel: 1
             gain: 0.0
-            inverted: false
 
-# Filter definitions - start with passthrough, can be modified remotely
-filters:
-  # Placeholder filters that can be updated via API
-  highpass_filter:
-    type: Biquad
-    freq: 20.0
-    q: 0.707
-    filter_type: Highpass
-    
-  lowpass_filter:
-    type: Biquad
-    freq: 20000.0
-    q: 0.707
-    filter_type: Lowpass
-
-# Pipeline - audio processing chain
 pipeline:
   - type: Mixer
-    name: output_mixer
-    
-  # Optional filters (can be enabled/disabled remotely)
-  # - type: Filter
-  #   channel: 0
-  #   names:
-  #     - highpass_filter
-  #     - lowpass_filter
-  # - type: Filter
-  #   channel: 1  
-  #   names:
-  #     - highpass_filter
-  #     - lowpass_filter
-
-# Enable websocket server for remote control
-enable_websocket_server: true
-websocket_port: 1234
-websocket_address: "0.0.0.0"
-
-# Enable rate adjust for clock sync
-enable_rate_adjust: true
-adjust_period: 10
-target_level: 1000
-adjust_faster_factor: 2.0
-adjust_slower_factor: 0.5
-
-# Logging
-log_level: info
+    name: main

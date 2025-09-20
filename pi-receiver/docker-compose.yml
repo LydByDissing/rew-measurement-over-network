@@ -26,10 +26,15 @@ services:
     
     # Volume mounts for audio and logging
     volumes:
-      # Audio system access (try both PulseAudio and ALSA)
+      # Audio system access (ALSA + PulseAudio)
       - /dev/snd:/dev/snd:rw
-      #- /run/user/1000/pulse:/run/user/1000/pulse:ro
-      #- /var/lib/alsa:/var/lib/alsa:ro
+      - /run/user/1000/pulse:/run/user/1000/pulse:ro
+      - /var/lib/alsa:/var/lib/alsa:ro
+      - /usr/share/alsa:/usr/share/alsa:ro
+      # PulseAudio cookie for authentication
+      - ${HOME}/.config/pulse/cookie:/home/pi/.config/pulse/cookie:ro
+      # Shared memory for better audio performance
+      - /dev/shm:/dev/shm
       
       # Logs persistence  
       - ./logs:/app/logs
@@ -49,16 +54,20 @@ services:
     
     # User matching PipeWire user
     user: "1000:1000"
+
+    # Audio group access
+    group_add:
+      - audio
     
     # Resource limits (adjust for Pi model)
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '1'
-        reservations:
-          memory: 64M
-          cpus: '1'
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 256M
+    #       cpus: '1'
+    #     reservations:
+    #       memory: 64M
+    #       cpus: '1'
     
     # Logging
     logging:

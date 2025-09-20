@@ -1,15 +1,16 @@
 #!/bin/bash
 #
 # REW MediaMTX Audio Receiver - Deployment Script
-# Simplified deployment for MediaMTX + CamillaDSP containers only
+# Native binary deployment with tarball packaging
 #
 
 set -e
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_NAME="rew-mediamtx-receiver"
-CONTAINER_NAME="rew-mediamtx-audio-receiver"
+MEDIAMTX_VERSION="v1.12.3"
+CAMILLADSP_VERSION="v2.0.3"
+PACKAGE_NAME="rew-receiver-package"
 
 # Versioning configuration
 VERSION_FILE="$SCRIPT_DIR/.version"
@@ -31,15 +32,9 @@ get_git_hash() {
     if git rev-parse --git-dir > /dev/null 2>&1; then
         local git_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-        # Check for uncommitted changes
-        if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        # Simple dirty check - just mark as dirty if git status shows changes
+        if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
             git_hash="${git_hash}-dirty"
-        fi
-
-        # Check for untracked files in pi-receiver directory
-        local untracked_count=$(git ls-files --others --exclude-standard "$SCRIPT_DIR" 2>/dev/null | wc -l)
-        if [ "$untracked_count" -gt 0 ]; then
-            git_hash="${git_hash}-u${untracked_count}"
         fi
 
         echo "$git_hash"
@@ -59,14 +54,12 @@ show_git_context() {
         log "  Commit: $(git rev-parse --short HEAD 2>/dev/null) ($commit_date)"
         log "  Subject: $commit_subject"
 
-        # Show git status summary
-        local modified=$(git diff-index --name-only HEAD -- 2>/dev/null | wc -l)
-        local untracked=$(git ls-files --others --exclude-standard "$SCRIPT_DIR" 2>/dev/null | wc -l)
-
-        if [ "$modified" -gt 0 ] || [ "$untracked" -gt 0 ]; then
+        # Simple git status check
+        local status_output=$(git status --porcelain 2>/dev/null)
+        if [ -n "$status_output" ]; then
+            local modified_count=$(echo "$status_output" | grep -c '^.M' || echo "0")
             warning "Working directory has uncommitted changes:"
-            [ "$modified" -gt 0 ] && warning "  Modified files: $modified"
-            [ "$untracked" -gt 0 ] && warning "  Untracked files in pi-receiver/: $untracked"
+            [ "$modified_count" -gt 0 ] && warning "  Modified files: $modified_count"
         else
             success "Working directory is clean"
         fi
@@ -129,67 +122,60 @@ REW MediaMTX Audio Receiver - Deployment Script
 Usage: $0 [OPTIONS] COMMAND
 
 Commands:
-    build               Build Docker image locally (creates unique version)
-    build-pi            Build ARM image for Raspberry Pi
-    deploy              Deploy to local Docker
-    deploy-remote HOST  Deploy to remote Pi via SSH
-    promote VERSION     Promote a version tag to :latest
-    list-versions       List available image versions
-    start               Start the container
-    stop                Stop the container
-    logs                Show container logs
-    status              Show container status
-    clean               Remove container and image
-    test-arm            Test ARM container with emulation
-    
+    download            Download ARM binaries and create package
+    build               Build Docker image for testing only
+    package             Create deployment tarball from binaries
+    deploy-remote HOST  Deploy native binaries to remote Pi via SSH
+    test-container      Test with container locally
+    promote VERSION     Promote a version to latest
+    list-versions       List available package versions
+    start               Start native services on local Pi
+    stop                Stop native services on local Pi
+    logs                Show service logs
+    status              Show service status
+    clean               Remove native installation
+
 Options:
-    -h, --help          Show this help message
-    -v, --verbose       Enable verbose output
-    --no-cache          Build without using cache
-    --platform ARCH     Target platform (linux/arm/v6, linux/amd64)
-    --use-cached        Use existing ARM image (skip force rebuild for deploy-remote)
+    -h, --help              Show this help message
+    -v, --verbose           Enable verbose output
+    --mediamtx-version VER  MediaMTX version (default: $MEDIAMTX_VERSION)
+    --camilladsp-version VER CamillaDSP version (default: $CAMILLADSP_VERSION)
+    --test-with-container   Use container for testing deployment
 
 Examples:
-    $0 build                                # Build x86 image (creates unique version)
-    $0 build-pi                            # Build ARM image for Pi
-    $0 list-versions                       # Show available image versions
-    $0 deploy                              # Deploy locally
-    $0 deploy-remote pi@192.168.1.100     # Deploy to remote Pi (auto-builds ARM)
-    $0 promote 20250915-185432-arm-a1b2c3d # Promote tested version to :latest
-    $0 test-arm                            # Test ARM container locally
-    $0 logs                                # View container logs
-    $0 status                              # Check container status
+    $0 download                           # Download binaries and create package
+    $0 package                            # Create tarball from existing package
+    $0 deploy-remote pi@192.168.1.100     # Deploy native binaries to Pi
+    $0 test-container                     # Test with Docker container locally
+    $0 status                             # Check native service status
+    $0 logs                               # View native service logs
 
 Deployment Workflow:
-    1. Build: $0 build-pi                               # Creates unique ARM version
-    2. Deploy: $0 deploy-remote pi@IP                   # Deploys latest ARM version
-    3. Test: Test on Pi, verify audio works
-    4. Promote: $0 promote VERSION                      # Promote working version to :latest
+    1. Download: $0 download                            # Downloads ARM binaries
+    2. Package: $0 package                              # Creates deployment tarball
+    3. Deploy: $0 deploy-remote pi@IP                   # Deploys native binaries
+    4. Test: ssh pi@IP 'sudo systemctl status mediamtx camilladsp'
 
-Version Management:
-    $0 list-versions                                    # Show all built versions
-    $0 promote 20250915-185432-arm-a1b2c3d             # Promote specific version
-
-This script deploys the MediaMTX + CamillaDSP container approach only.
-The legacy Python container has been removed due to ARM timestamp issues.
+This script deploys native MediaMTX + CamillaDSP binaries for better audio performance.
+Docker containers are available for testing purposes only.
 EOF
 }
 
 # Check dependencies
 check_dependencies() {
     local missing=()
-    
-    if ! command -v docker >/dev/null 2>&1; then
-        missing+=("docker")
+
+    if ! command -v curl >/dev/null 2>&1; then
+        missing+=("curl")
     fi
-    
-    if ! command -v docker-compose >/dev/null 2>&1 && ! docker compose version >/dev/null 2>&1; then
-        missing+=("docker-compose")
+
+    if ! command -v tar >/dev/null 2>&1; then
+        missing+=("tar")
     fi
-    
+
     if [ ${#missing[@]} -ne 0 ]; then
         error "Missing dependencies: ${missing[*]}"
-        echo "Please install Docker and Docker Compose first."
+        echo "Please install required tools first."
         exit 1
     fi
 }
@@ -217,120 +203,237 @@ detect_arch() {
     esac
 }
 
-# Build Docker image
-build_image() {
-    local platform="${1:-$(detect_arch)}"
-    local cache_flag=""
+# Download MediaMTX ARM binary
+download_mediamtx() {
+    local version="$1"
+    local download_dir="$SCRIPT_DIR/binaries"
 
-    if [ "$NO_CACHE" = "true" ]; then
-        cache_flag="--no-cache"
+    mkdir -p "$download_dir"
+
+    log "Downloading MediaMTX $version for ARM v6..."
+
+    local url="https://github.com/bluenviron/mediamtx/releases/download/${version}/mediamtx_${version}_linux_armv6.tar.gz"
+    local tarball="$download_dir/mediamtx_${version}_linux_armv6.tar.gz"
+
+    if [ ! -f "$tarball" ]; then
+        curl -L -o "$tarball" "$url"
     fi
 
-    # Generate unique version tag
-    local unique_tag=$(generate_unique_tag "$platform")
-    local arch=$(get_arch_suffix "$platform")
-    local build_date=$(date +%Y%m%d)
+    # Extract binary
+    tar -xzf "$tarball" -C "$download_dir" mediamtx
+    chmod +x "$download_dir/mediamtx"
 
-    log "Building MediaMTX Docker image for platform: $platform"
-    log "Unique version tag: $unique_tag"
-
-    # Show git context for traceability
-    show_git_context
-
-    if command -v docker buildx >/dev/null 2>&1; then
-        log "Using Docker Buildx for cross-platform build"
-        docker buildx build \
-            --platform "$platform" \
-            --tag "${IMAGE_NAME}:${unique_tag}" \
-            --tag "${IMAGE_NAME}:latest-${arch}" \
-            --tag "${IMAGE_NAME}:${build_date}" \
-            $cache_flag \
-            --load \
-            "$SCRIPT_DIR"
-    else
-        log "Using standard Docker build"
-        docker build \
-            --tag "${IMAGE_NAME}:${unique_tag}" \
-            --tag "${IMAGE_NAME}:latest-${arch}" \
-            --tag "${IMAGE_NAME}:${build_date}" \
-            $cache_flag \
-            "$SCRIPT_DIR"
-    fi
-
-    # Save the version information
-    save_version_tag "$arch" "$unique_tag"
-
-    success "MediaMTX Docker image built successfully!"
-    success "✅ Unique tag: ${IMAGE_NAME}:${unique_tag}"
-    success "✅ Latest tag: ${IMAGE_NAME}:latest-${arch}"
-
-    # Export the unique tag for use by calling functions
-    LAST_BUILT_TAG="$unique_tag"
+    success "MediaMTX binary downloaded to $download_dir/mediamtx"
 }
 
-# Deploy container
-deploy_container() {
-    log "Deploying MediaMTX Audio Receiver container..."
-    
-    cd "$SCRIPT_DIR"
-    
-    # Check for environment file
-    if [ ! -f .env ]; then
-        warning "No .env file found - using container defaults"
-        echo "# REW MediaMTX Audio Receiver - Environment Configuration" > .env
-        echo "" >> .env
-        echo "# Pi identification" >> .env
-        echo "PI_HOSTNAME=rew-pi-mediamtx" >> .env
-        echo "" >> .env
-        echo "# Timezone" >> .env
-        echo "TZ=UTC" >> .env
-        echo "" >> .env
-        echo "# Logging level" >> .env
-        echo "LOG_LEVEL=info" >> .env
-        echo "" >> .env
-        echo "# Docker Compose project name" >> .env
-        echo "COMPOSE_PROJECT_NAME=rew-mediamtx" >> .env
+# Download CamillaDSP ARM binary
+download_camilladsp() {
+    local version="$1"
+    local download_dir="$SCRIPT_DIR/binaries"
+
+    mkdir -p "$download_dir"
+
+    log "Downloading CamillaDSP $version for ARM v6..."
+
+    local url="https://github.com/HEnquist/camilladsp/releases/download/${version}/camilladsp-linux-armv6.tar.gz"
+    local tarball="$download_dir/camilladsp_${version}_linux_armv6.tar.gz"
+
+    if [ ! -f "$tarball" ]; then
+        curl -L -o "$tarball" "$url"
     fi
-    
-    # Use docker compose (modern) or docker-compose (legacy)
-    if docker compose version >/dev/null 2>&1; then
-        COMPOSE_CMD="docker compose"
-    elif command -v docker-compose >/dev/null 2>&1; then
-        COMPOSE_CMD="docker-compose"
-    else
-        error "Docker Compose not found"
+
+    # Extract binary
+    tar -xzf "$tarball" -C "$download_dir"
+    chmod +x "$download_dir/camilladsp"
+
+    success "CamillaDSP binary downloaded to $download_dir/camilladsp"
+}
+
+# Download all required binaries
+download_binaries() {
+    log "Downloading ARM binaries for MediaMTX and CamillaDSP..."
+
+    download_mediamtx "$MEDIAMTX_VERSION"
+    download_camilladsp "$CAMILLADSP_VERSION"
+
+    success "All binaries downloaded successfully"
+}
+
+# Create deployment package
+create_package() {
+    local package_dir="$SCRIPT_DIR/$PACKAGE_NAME"
+
+    log "Creating deployment package..."
+
+    rm -rf "$package_dir"
+    mkdir -p "$package_dir"
+
+    # Check if binaries exist
+    if [ ! -f "$SCRIPT_DIR/binaries/mediamtx" ] || [ ! -f "$SCRIPT_DIR/binaries/camilladsp" ]; then
+        error "Binaries not found. Run: $0 download first"
         exit 1
     fi
-    
-    # Deploy the container
-    log "Starting MediaMTX container with $COMPOSE_CMD"
-    $COMPOSE_CMD up -d
-    
-    # Wait for container to be ready
-    log "Waiting for container to start..."
-    sleep 5
-    
-    # Check container status
-    if docker ps | grep -q "$CONTAINER_NAME"; then
-        success "MediaMTX container deployed successfully"
-        echo
-        echo "Container Status:"
-        docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-        echo
-        echo "🔗 Access Points:"
-        echo "• MediaMTX API: http://localhost:9997/v3/config"
-        echo "• RTP Input: localhost:5004"
-        echo "• RTSP Stream: rtsp://localhost:8554/"
-        echo
-        echo "🔧 Management:"
-        echo "• View logs: $0 logs"
-        echo "• Check status: $0 status"
-        echo "• Stop: $0 stop"
-    else
-        error "MediaMTX container failed to start"
-        echo "Check logs: $0 logs"
-        exit 1
+
+    # Copy binaries
+    cp "$SCRIPT_DIR/binaries/mediamtx" "$package_dir/"
+    cp "$SCRIPT_DIR/binaries/camilladsp" "$package_dir/"
+
+    # Copy configurations
+    cp "$SCRIPT_DIR/mediamtx.yml" "$package_dir/"
+    cp "$SCRIPT_DIR/camilladsp.yml" "$package_dir/"
+    if [ -f "$SCRIPT_DIR/camilladsp-fallback.yml" ]; then
+        cp "$SCRIPT_DIR/camilladsp-fallback.yml" "$package_dir/"
     fi
+
+    # Copy systemd services
+    cp "$SCRIPT_DIR/mediamtx.service" "$package_dir/"
+    cp "$SCRIPT_DIR/camilladsp.service" "$package_dir/"
+
+    # Copy the install script from existing package if it exists, or create it
+    if [ -f "$SCRIPT_DIR/rew-receiver-package/install.sh" ]; then
+        cp "$SCRIPT_DIR/rew-receiver-package/install.sh" "$package_dir/"
+    else
+        # Use the existing deploy-mediamtx.sh as a template for install script
+        cat > "$package_dir/install.sh" << 'INSTALL_EOF'
+#!/bin/bash
+set -e
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log() { echo -e "${BLUE}[INSTALL]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+
+TARGET_DIR="/home/pi/rew-receiver"
+CURRENT_DIR="$(pwd)"
+
+log "🎵 Installing REW MediaMTX Audio Receiver..."
+
+# Create target directory
+sudo mkdir -p "$TARGET_DIR"
+sudo chown pi:pi "$TARGET_DIR"
+
+# Stop any existing services first to free up binaries
+log "Stopping existing services..."
+sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
+sleep 2
+
+# Copy files
+log "Installing binaries and configurations..."
+if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml "$TARGET_DIR/" 2>/dev/null; then
+    error "Failed to copy binaries. Trying to force stop services and kill processes..."
+    sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
+    sudo pkill -f mediamtx 2>/dev/null || true
+    sudo pkill -f camilladsp 2>/dev/null || true
+    sleep 3
+
+    log "Retrying file copy..."
+    cp mediamtx camilladsp mediamtx.yml camilladsp.yml "$TARGET_DIR/"
+fi
+chmod +x "$TARGET_DIR/mediamtx" "$TARGET_DIR/camilladsp"
+
+# Install systemd services
+log "Installing systemd services..."
+sudo cp mediamtx.service camilladsp.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# Setup ALSA loopback
+log "Configuring ALSA loopback device..."
+sudo modprobe snd-aloop || true
+echo "snd-aloop" | sudo tee -a /etc/modules-load.d/modules.conf > /dev/null || true
+
+# Create log directories
+sudo mkdir -p /var/log/mediamtx
+sudo chown pi:pi /var/log/mediamtx
+
+# Check ALSA device configuration and select appropriate config
+log "Checking ALSA device configuration..."
+
+# Check if loopback device is available
+if grep -q "Loopback" /proc/asound/cards 2>/dev/null; then
+    success "ALSA Loopback device detected"
+
+    # Check if any processes are using audio devices
+    if pgrep -f "pulseaudio\|jackd" >/dev/null 2>&1; then
+        warning "Audio processes detected, stopping them..."
+        sudo pkill pulseaudio 2>/dev/null || true
+        sudo pkill jackd 2>/dev/null || true
+        sleep 1
+    fi
+else
+    warning "ALSA Loopback device not found, using fallback configuration"
+    if [ -f "$TARGET_DIR/camilladsp-fallback.yml" ]; then
+        log "Switching to fallback configuration..."
+        cp "$TARGET_DIR/camilladsp-fallback.yml" "$TARGET_DIR/camilladsp.yml"
+    fi
+fi
+
+# Enable and start services
+log "Starting services..."
+sudo systemctl enable mediamtx
+sudo systemctl start mediamtx
+sleep 3
+
+# Disable CamillaDSP temporarily due to ALSA enumeration issues
+warning "Disabling CamillaDSP due to persistent ALSA enumeration issues"
+warning "CamillaDSP service will be installed but not started automatically"
+warning "MediaMTX will handle audio streaming without DSP processing for now"
+
+# Install but don't enable CamillaDSP service
+sudo systemctl disable camilladsp 2>/dev/null || true
+sudo systemctl stop camilladsp 2>/dev/null || true
+
+log "CamillaDSP is available but disabled. To troubleshoot later:"
+log "• Check ALSA devices: cat /proc/asound/cards"
+log "• Try manual start: sudo systemctl start camilladsp"
+log "• View logs: sudo journalctl -u camilladsp -f"
+
+# Check final status
+MEDIAMTX_ACTIVE=$(systemctl is-active --quiet mediamtx && echo "true" || echo "false")
+CAMILLADSP_ENABLED=$(systemctl is-enabled camilladsp 2>/dev/null | grep -q "enabled" && echo "true" || echo "false")
+
+if [ "$MEDIAMTX_ACTIVE" = "true" ]; then
+    success "🎉 REW MediaMTX Audio Receiver installed successfully!"
+    warning "⚠️ CamillaDSP is installed but disabled due to ALSA issues"
+    warning "Audio streaming works via MediaMTX without DSP processing"
+
+    echo
+    echo "📊 Service Status:"
+    sudo systemctl status mediamtx --no-pager -l
+
+    echo
+    echo "🔗 Access Points:"
+    echo "• MediaMTX API: http://$(hostname -I | awk '{print $1}'):9997"
+    echo "• RTSP Stream: rtsp://$(hostname -I | awk '{print $1}'):8554/stream-name"
+    echo "• Publish to: MediaMTX via RTSP/RTMP/WebRTC"
+    echo
+    echo "🔧 Commands:"
+    echo "• View MediaMTX logs: sudo journalctl -u mediamtx -f"
+    echo "• Restart MediaMTX: sudo systemctl restart mediamtx"
+    echo "• Stop MediaMTX: sudo systemctl stop mediamtx"
+    echo
+    warning "🔧 CamillaDSP Troubleshooting (when ready):"
+    warning "• Check ALSA devices: cat /proc/asound/cards"
+    warning "• Check CamillaDSP logs: sudo journalctl -u camilladsp -f"
+    warning "• Try manual start: sudo systemctl start camilladsp"
+    warning "• Check config: cat $TARGET_DIR/camilladsp.yml"
+else
+    error "❌ MediaMTX installation failed"
+    echo "Check logs: sudo journalctl -u mediamtx"
+    exit 1
+fi
+INSTALL_EOF
+    fi
+
+    chmod +x "$package_dir/install.sh"
+
+    success "Deployment package created in $package_dir/"
 }
 
 # Parse SSH target to extract user and host
@@ -351,61 +454,37 @@ parse_ssh_target() {
     log "Parsed SSH target: $SSH_TARGET (user: $SSH_USER, host: $SSH_HOST)"
 }
 
-# Export Docker image as tarball for Pi deployment
-export_image() {
-    local platform="${1:-linux/arm/v6}"
-    local force_rebuild="${2:-false}"
+# Create deployment tarball
+create_tarball() {
     local export_dir="$SCRIPT_DIR/export"
+    local package_dir="$SCRIPT_DIR/$PACKAGE_NAME"
 
-    local target_arch=$(get_arch_suffix "$platform")
-    local latest_tag="${IMAGE_NAME}:latest-${target_arch}"
-
-    log "Exporting MediaMTX Docker image for platform: $platform"
-
-    # Determine which image to export
-    local export_tag=""
-    local needs_build=false
-
-    if [ "$force_rebuild" = "true" ]; then
-        log "Force rebuild requested - building fresh image for platform: $platform"
-        build_image "$platform"
-        export_tag="${IMAGE_NAME}:${LAST_BUILT_TAG}"
-    else
-        # Check if we have a recent image for this architecture
-        local stored_version=$(get_latest_version_tag "$target_arch")
-        if [ -n "$stored_version" ] && docker image inspect "${IMAGE_NAME}:${stored_version}" >/dev/null 2>&1; then
-            log "Using existing version: ${stored_version}"
-            export_tag="${IMAGE_NAME}:${stored_version}"
-        elif docker image inspect "$latest_tag" >/dev/null 2>&1; then
-            log "Using latest-${target_arch} tag"
-            export_tag="$latest_tag"
-        else
-            log "No suitable image found - building fresh image for platform: $platform"
-            build_image "$platform"
-            export_tag="${IMAGE_NAME}:${LAST_BUILT_TAG}"
-        fi
+    if [ ! -d "$package_dir" ]; then
+        error "Package directory not found. Run: $0 package first"
+        exit 1
     fi
-    
+
+    # Generate unique version tag
+    local unique_tag=$(generate_unique_tag "native")
+    local tarball_name="rew-receiver-native-${unique_tag}.tar.gz"
+
+    log "Creating deployment tarball: $tarball_name"
+
     # Create export directory
     mkdir -p "$export_dir"
 
-    # Generate tarball name with version info
-    local version_tag=$(echo "$export_tag" | cut -d: -f2)
-    local tarball_name="${IMAGE_NAME}-${version_tag}.tar"
+    # Clean up old tarballs
+    log "Cleaning up old native tarballs..."
+    rm -f "$export_dir"/rew-receiver-native-*.tar.gz
 
-    # Clean up old tarballs first
-    log "Cleaning up old image tarballs..."
-    rm -f "$export_dir"/${IMAGE_NAME}-*.tar
-
-    # Export the image as tarball
-    log "Exporting image to tarball: $export_dir/$tarball_name"
-    log "Using image tag: $export_tag"
-    docker save "$export_tag" -o "$export_dir/$tarball_name"
+    # Create tarball with package contents
+    cd "$SCRIPT_DIR"
+    tar -czf "$export_dir/$tarball_name" -C "$SCRIPT_DIR" "$PACKAGE_NAME"
 
     # Save export info for tracking
-    echo "export_tag=${export_tag}" > "$export_dir/.export-info"
+    echo "package_name=${PACKAGE_NAME}" > "$export_dir/.export-info"
     echo "tarball=${tarball_name}" >> "$export_dir/.export-info"
-    echo "platform=${platform}" >> "$export_dir/.export-info"
+    echo "deployment_type=native" >> "$export_dir/.export-info"
     echo "export_date=$(date -Iseconds)" >> "$export_dir/.export-info"
 
     # Add git context to export info
@@ -414,8 +493,6 @@ export_image() {
         echo "git_commit=$(git rev-parse HEAD 2>/dev/null)" >> "$export_dir/.export-info"
         echo "git_commit_short=$(git rev-parse --short HEAD 2>/dev/null)" >> "$export_dir/.export-info"
         echo "git_subject=$(git log -1 --pretty=format:"%s" 2>/dev/null)" >> "$export_dir/.export-info"
-        echo "git_author=$(git log -1 --pretty=format:"%an <%ae>" 2>/dev/null)" >> "$export_dir/.export-info"
-        echo "git_date=$(git log -1 --pretty=format:"%ci" 2>/dev/null)" >> "$export_dir/.export-info"
 
         # Check for dirty state
         if ! git diff-index --quiet HEAD -- 2>/dev/null; then
@@ -424,180 +501,18 @@ export_image() {
             echo "git_dirty=false" >> "$export_dir/.export-info"
         fi
     fi
-    
-    # Create deployment package
-    log "Creating deployment package..."
 
-    # Copy docker-compose.yml (install script will tag the versioned image as :latest)
-    cp "$SCRIPT_DIR/docker-compose.yml" "$export_dir/"
-    if [ -f "$SCRIPT_DIR/.env" ]; then
-        cp "$SCRIPT_DIR/.env" "$export_dir/"
-    fi
-    
-    # Create install script
-    cat > "$export_dir/install-mediamtx.sh" << 'EOF'
-#!/bin/bash
-set -e
+    # Save the version information
+    save_version_tag "native" "$unique_tag"
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'  
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log() { echo -e "${BLUE}[INSTALL]${NC} $1"; }
-success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; }
-warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-
-echo "🎵 REW MediaMTX Audio Receiver - Installation"
-echo "============================================="
-
-# Find the correct tarball - use the one specified in .export-info if available
-if [ -f ".export-info" ]; then
-    source ".export-info"
-    TARBALL="$tarball"
-    log "Using tarball from export info: $TARBALL"
-else
-    # Fallback: find the newest tarball by timestamp
-    TARBALL=$(ls -t rew-mediamtx-receiver-*.tar 2>/dev/null | head -1)
-    if [ -z "$TARBALL" ]; then
-        error "No MediaMTX receiver tarball found (rew-mediamtx-receiver-*.tar)"
-        exit 1
-    fi
-    warning "No export info found, using newest tarball: $TARBALL"
-fi
-
-# Verify the tarball exists
-if [ ! -f "$TARBALL" ]; then
-    error "Specified tarball not found: $TARBALL"
-    echo "Available tarballs:"
-    ls -la rew-mediamtx-receiver-*.tar 2>/dev/null || echo "  None found"
-    exit 1
-fi
-
-log "Using tarball: $TARBALL"
-
-# Stop existing container
-if docker ps | grep -q "rew-mediamtx-audio-receiver"; then
-    log "Stopping existing container..."
-    docker compose down 2>/dev/null || docker-compose down 2>/dev/null || true
-fi
-
-# Remove old images and tarballs to prevent confusion
-if docker images | grep -q "rew-mediamtx-receiver"; then
-    log "Removing old images..."
-    docker rmi rew-mediamtx-receiver:latest 2>/dev/null || true
-    # Remove other tagged versions except the one we're about to load
-    docker images rew-mediamtx-receiver --format "{{.Tag}}" | grep -v "^latest$" | head -10 | while read tag; do
-        if [ "$tag" != "$(basename "$TARBALL" .tar | sed 's/rew-mediamtx-receiver-//')" ]; then
-            docker rmi "rew-mediamtx-receiver:$tag" 2>/dev/null || true
-        fi
-    done
-fi
-
-# Clean up old tarballs (keep only the current one)
-log "Cleaning up old tarballs..."
-ls rew-mediamtx-receiver-*.tar 2>/dev/null | grep -v "$(basename "$TARBALL")" | head -5 | while read old_tarball; do
-    log "Removing old tarball: $old_tarball"
-    rm -f "$old_tarball"
-done
-
-log "Loading MediaMTX Docker image from tarball..."
-
-# Extract expected tag from tarball filename
-EXPECTED_TAG=$(basename "$TARBALL" .tar | sed 's/rew-mediamtx-receiver-//')
-log "Expected image tag from tarball: $EXPECTED_TAG"
-
-# Load the image and capture the output to get the actual loaded tag
-LOAD_OUTPUT=$(docker load -i "$TARBALL" 2>&1)
-echo "$LOAD_OUTPUT"
-
-# Extract the loaded image tag from docker load output or use expected tag
-LOADED_TAG=""
-if echo "$LOAD_OUTPUT" | grep -q "Loaded image:"; then
-    LOADED_TAG=$(echo "$LOAD_OUTPUT" | grep "Loaded image:" | sed 's/.*: *//' | cut -d: -f2)
-    log "Detected loaded tag from output: $LOADED_TAG"
-elif docker image inspect "rew-mediamtx-receiver:$EXPECTED_TAG" >/dev/null 2>&1; then
-    LOADED_TAG="$EXPECTED_TAG"
-    log "Using expected tag: $LOADED_TAG"
-else
-    error "Could not determine loaded image tag"
-    exit 1
-fi
-
-# Tag the specific loaded image as latest for docker-compose compatibility
-if [ -n "$LOADED_TAG" ] && [ "$LOADED_TAG" != "latest" ]; then
-    log "Tagging loaded image $LOADED_TAG as latest..."
-    docker tag "rew-mediamtx-receiver:$LOADED_TAG" "rew-mediamtx-receiver:latest"
-else
-    error "Invalid loaded tag: $LOADED_TAG"
-    exit 1
-fi
-
-success "Image loaded successfully"
-docker images | grep rew-mediamtx-receiver
-
-# Verify we're using the correct image by checking export info
-if [ -f ".export-info" ]; then
-    source ".export-info"
-    CURRENT_IMAGE_ID=$(docker image inspect "rew-mediamtx-receiver:latest" --format='{{.Id}}' 2>/dev/null | cut -d: -f2 | cut -c1-12)
-    log "Current latest image ID: $CURRENT_IMAGE_ID"
-    log "Expected from export: ${export_tag}"
-    if [ -n "$git_commit_short" ]; then
-        log "Git commit: $git_commit_short (dirty: ${git_dirty:-unknown})"
-    fi
-fi
-
-if [ ! -f "docker-compose.yml" ]; then
-    error "docker-compose.yml not found in deployment package"
-    exit 1
-fi
-
-if [ ! -f ".env" ]; then
-    warning "No .env file found - using defaults"
-fi
-
-log "Deploying MediaMTX audio receiver container..."
-docker compose up -d || docker-compose up -d
-
-sleep 5
-
-if docker ps | grep -q "rew-mediamtx-audio-receiver"; then
-    success "MediaMTX audio receiver deployed successfully!"
-    echo
-    echo "📊 Container Status:"
-    docker ps | grep mediamtx
-    echo
-    echo "🔗 Access Points:"
-    PI_IP=$(hostname -I | awk '{print $1}')
-    echo "• MediaMTX API: http://$PI_IP:9997/v3/config"
-    echo "• RTP Input: $PI_IP:5004"
-    echo "• RTSP Stream: rtsp://$PI_IP:8554/"
-    echo
-    echo "🔧 Management:"
-    echo "• View logs: docker logs rew-mediamtx-audio-receiver -f"
-    echo "• Restart: docker restart rew-mediamtx-audio-receiver"
-    echo "• Stop: docker compose down"
-else
-    error "Container failed to start"
-    echo "Check logs with: docker logs rew-mediamtx-audio-receiver"
-    exit 1
-fi
-EOF
-    
-    chmod +x "$export_dir/install-mediamtx.sh"
-    
-    success "Export package created in: $export_dir"
-    success "✅ Image version: $version_tag"
-    success "✅ Tarball: $tarball_name"
-    echo "Contents:"
-    ls -la "$export_dir"
+    success "Deployment tarball created: $export_dir/$tarball_name"
+    success "✅ Version tag: $unique_tag"
+    echo "Package contents:"
+    tar -tzf "$export_dir/$tarball_name" | head -10
     echo
     echo "📦 To deploy to Pi:"
-    echo "1. scp -r $export_dir/ pi@pi-ip:~/rew-mediamtx/"
-    echo "2. ssh pi@pi-ip 'cd ~/rew-mediamtx && ./install-mediamtx.sh'"
+    echo "1. scp $export_dir/$tarball_name pi@pi-ip:~/"
+    echo "2. ssh pi@pi-ip 'tar -xzf $tarball_name && cd $PACKAGE_NAME && ./install.sh'"
 }
 
 # List available image versions
@@ -723,55 +638,55 @@ deploy_remote() {
 
     parse_ssh_target "$ssh_target"
 
-    log "Deploying MediaMTX container to remote Pi: $SSH_TARGET"
+    log "Deploying native MediaMTX binaries to remote Pi: $SSH_TARGET"
 
-    # Build ARM image for Pi deployment
+    # Check if tarball exists
     local export_dir="$SCRIPT_DIR/export"
+    local latest_tarball=$(ls -t "$export_dir"/rew-receiver-native-*.tar.gz 2>/dev/null | head -1)
 
-    if [ "${USE_CACHED:-false}" = "true" ]; then
-        log "Using cached ARM image (if available) due to --use-cached flag"
-        export_image "linux/arm/v6" "false"
-    else
-        log "Building fresh ARM image for Pi deployment (this ensures latest changes)..."
-        log "This may take a few minutes depending on your system..."
-        log "Use --use-cached flag to skip rebuild if you have a recent ARM image"
-        # Force rebuild ARM image and export
-        export_image "linux/arm/v6" "true"
+    if [ -z "$latest_tarball" ]; then
+        log "No deployment tarball found, creating one..."
+        create_tarball
+        latest_tarball=$(ls -t "$export_dir"/rew-receiver-native-*.tar.gz 2>/dev/null | head -1)
     fi
-    
+
+    log "Using tarball: $(basename "$latest_tarball")"
+
     # SSH options
     local ssh_opts="-o ConnectTimeout=10 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
-    
+
     # Test SSH connectivity
     log "Testing SSH connectivity to $SSH_TARGET..."
     if ! ssh $ssh_opts "$SSH_TARGET" "echo 'SSH test successful'" 2>/dev/null; then
         error "SSH connection failed to $SSH_TARGET"
         exit 1
     fi
-    
+
     success "SSH connectivity verified"
-    
-    # Create remote directory
-    log "Creating remote directory ~/rew-mediamtx..."
-    ssh $ssh_opts "$SSH_TARGET" "mkdir -p ~/rew-mediamtx"
-    
-    # Transfer deployment package
-    log "Transferring MediaMTX deployment package..."
-    scp $ssh_opts -r "$export_dir"/* "$SSH_TARGET:~/rew-mediamtx/"
-    
+
+    # Transfer deployment tarball
+    log "Transferring native deployment package..."
+    scp $ssh_opts "$latest_tarball" "$SSH_TARGET:~/"
+
     success "Deployment package transferred"
-    
-    # Execute remote installation
-    log "Installing MediaMTX container on remote Pi..."
-    ssh $ssh_opts "$SSH_TARGET" "cd ~/rew-mediamtx && ./install-mediamtx.sh"
-    
-    success "MediaMTX container deployment completed!"
+
+    # Extract and install on remote Pi
+    local tarball_name=$(basename "$latest_tarball")
+    log "Installing native MediaMTX + CamillaDSP on remote Pi..."
+    ssh $ssh_opts "$SSH_TARGET" "
+        tar -xzf '$tarball_name' &&
+        cd '$PACKAGE_NAME' &&
+        ./install.sh
+    "
+
+    success "Native MediaMTX deployment completed!"
     echo
     echo "🔗 Next Steps:"
     echo "1. SSH to Pi: ssh $SSH_TARGET"
     echo "2. Test API: curl http://$SSH_HOST:9997/v3/config"
-    echo "3. View logs: ssh $SSH_TARGET 'docker logs rew-mediamtx-audio-receiver -f'"
+    echo "3. View logs: ssh $SSH_TARGET 'sudo journalctl -u mediamtx -u camilladsp -f'"
     echo "4. Configure REW: Send RTP to $SSH_HOST:5004"
+    echo "5. Check status: ssh $SSH_TARGET 'sudo systemctl status mediamtx camilladsp'"
 }
 
 # Test ARM container with emulation
@@ -906,22 +821,22 @@ main() {
                 PLATFORM="$2"
                 shift 2
                 ;;
-            --use-cached)
-                USE_CACHED=true
+            --test-with-container)
+                TEST_WITH_CONTAINER=true
                 shift
                 ;;
-            build|build-pi|export|deploy|start|stop|logs|status|clean|test-arm|list-versions)
+            download|build|package|start|stop|logs|status|clean|test-container|list-versions)
                 command="$1"
                 shift
-                ;;
-            promote)
-                command="promote"
-                version_arg="$2"
-                shift 2
                 ;;
             deploy-remote)
                 command="deploy-remote"
                 ssh_target="$2"
+                shift 2
+                ;;
+            promote)
+                command="promote"
+                version_arg="$2"
                 shift 2
                 ;;
             *)
@@ -942,18 +857,22 @@ main() {
     
     # Execute command
     case $command in
+        download)
+            download_binaries
+            create_package
+            ;;
         build)
-            build_image "${PLATFORM:-linux/amd64}"
+            if [ "$TEST_WITH_CONTAINER" = "true" ]; then
+                build_image "${PLATFORM:-linux/amd64}"
+            else
+                warning "Build command is for container testing only. Use 'download' to get native binaries."
+                echo "To test with containers, use: $0 --test-with-container build"
+                exit 1
+            fi
             ;;
-        build-pi)
-            build_image "linux/arm/v6"
-            ;;
-        export)
-            export_image "${PLATFORM:-linux/arm/v6}"
-            ;;
-        deploy)
-            build_image
-            deploy_container
+        package)
+            create_package
+            create_tarball
             ;;
         deploy-remote)
             deploy_remote "$ssh_target"
@@ -965,21 +884,33 @@ main() {
             list_versions
             ;;
         start)
-            start_container
+            log "Starting native MediaMTX and CamillaDSP services..."
+            sudo systemctl start mediamtx camilladsp
+            success "Native services started"
             ;;
         stop)
-            stop_container
+            log "Stopping native MediaMTX and CamillaDSP services..."
+            sudo systemctl stop mediamtx camilladsp
+            success "Native services stopped"
             ;;
         logs)
-            show_logs
+            log "Showing native service logs..."
+            sudo journalctl -u mediamtx -u camilladsp -f
             ;;
         status)
-            show_status
+            log "Native service status:"
+            sudo systemctl status mediamtx camilladsp --no-pager
             ;;
         clean)
-            clean_up
+            log "Cleaning native installation..."
+            sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
+            sudo systemctl disable mediamtx camilladsp 2>/dev/null || true
+            sudo rm -f /etc/systemd/system/mediamtx.service /etc/systemd/system/camilladsp.service
+            sudo systemctl daemon-reload
+            sudo rm -rf /home/pi/rew-receiver
+            success "Native installation cleaned"
             ;;
-        test-arm)
+        test-container)
             test_arm_container
             ;;
         *)

@@ -31,7 +31,7 @@ public class VirtualAudioSink {
     public static final String SINK_NAME = "rew_network_bridge";
     
     /** Human-readable description of the sink. */
-    public static final String SINK_DESCRIPTION = "REW Network Bridge";
+    public static final String SINK_DESCRIPTION = "REW Audio Bridge to Pi";
     
     /** Default audio format for the virtual sink. */
     public static final AudioFormat DEFAULT_FORMAT = new AudioFormat(
@@ -173,11 +173,11 @@ public class VirtualAudioSink {
             throw new IOException("PulseAudio is not available on this system");
         }
         
-        // Create the null sink
+        // Create the null sink with explicit properties
         ProcessBuilder pb = new ProcessBuilder(
             "pactl", "load-module", "module-null-sink",
             "sink_name=" + SINK_NAME,
-            "sink_properties=device.description=\"" + SINK_DESCRIPTION + "\"",
+            "sink_properties=device.description=\"" + SINK_DESCRIPTION + "\" device.class=\"sound\"",
             "format=s16le",
             "rate=48000",
             "channels=2"

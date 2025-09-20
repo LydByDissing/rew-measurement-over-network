@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 DEVICE_NAME="REW_Network_Audio_Bridge"
-DEVICE_DESCRIPTION="REW Network Audio Bridge"
+DEVICE_DESCRIPTION="REW_Network_Audio_Bridge"
 CONFIG_FILE="$HOME/.rew-loopback"
 
 # Colors for output
@@ -119,7 +119,9 @@ create_device() {
     
     # Step 1: Create null-sink (this is what REW outputs to)
     log "Creating null-sink: $DEVICE_NAME"
-    SINK_MODULE_ID=$(pactl load-module module-null-sink sink_name="$DEVICE_NAME")
+    SINK_MODULE_ID=$(pactl load-module module-null-sink \
+        sink_name="$DEVICE_NAME" \
+        sink_properties=device.description=\"$DEVICE_DESCRIPTION\")
     
     if [ -z "$SINK_MODULE_ID" ]; then
         error "Failed to create null-sink"

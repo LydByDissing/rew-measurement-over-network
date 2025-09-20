@@ -34,10 +34,10 @@ public class PulseAudioVirtualDevice {
     private static final Logger LOGGER = LoggerFactory.getLogger(PulseAudioVirtualDevice.class);
     
     /** Name of the virtual audio device. */
-    public static final String DEVICE_NAME = "REW_Network_Bridge";
+    public static final String DEVICE_NAME = "REW_Network_Audio_Bridge";
     
     /** Human-readable description. */
-    public static final String DEVICE_DESCRIPTION = "REW Network Audio Bridge";
+    public static final String DEVICE_DESCRIPTION = "REW_Network_Audio_Bridge";
     
     /** Audio format for the virtual device. */
     public static final AudioFormat DEVICE_FORMAT = new AudioFormat(
@@ -74,14 +74,19 @@ public class PulseAudioVirtualDevice {
         }
         
         try {
-            // Clean up any existing REW devices first
-            cleanupExistingDevices();
-            
-            // Create the null sink (this is what REW will output to)
-            createNullSink();
-            
-            // Create a loopback from the sink to our monitoring
-            createLoopback();
+            // Check if device already exists and is usable
+            if (checkExistingDevice()) {
+                LOGGER.info("Using existing REW virtual audio device");
+            } else {
+                // Clean up any broken devices first
+                cleanupExistingDevices();
+
+                // Create the null sink (this is what REW will output to)
+                createNullSink();
+
+                // For pure capture mode, we don't create a loopback to avoid local playback
+                // createLoopback(); // Disabled - we only want to capture, not play locally
+            }
             
             // Start monitoring the loopback for audio capture
             startAudioMonitoring();
@@ -168,7 +173,81 @@ public class PulseAudioVirtualDevice {
     public String getDeviceDescription() {
         return DEVICE_DESCRIPTION;
     }
-    
+
+    /**
+     * Checks if a usable REW virtual audio device already exists.
+     *
+     * @return true if device exists and is usable, false otherwise
+     */
+    private boolean checkExistingDevice() {
+        try {
+            String[] command = {"pactl", "list", "sinks", "short"};
+            ProcessResult result = runCommand(command);
+
+            if (result.exitCode == 0) {
+                // Check if our device exists
+                if (result.stdout.contains(DEVICE_NAME)) {
+                    LOGGER.debug("Found existing REW device: {}", DEVICE_NAME);
+
+                    // Try to get the module ID for the existing device
+                    extractExistingModuleIds();
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.debug("Error checking for existing device: {}", e.getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Extracts module IDs from existing REW devices.
+     */
+    private void extractExistingModuleIds() {
+        try {
+            // Get sink module ID
+            String[] sinkCommand = {"pactl", "list", "sinks"};
+            ProcessResult sinkResult = runCommand(sinkCommand);
+
+            if (sinkResult.exitCode == 0) {
+                String[] lines = sinkResult.stdout.split("\n");
+                boolean foundDevice = false;
+
+                for (String line : lines) {
+                    if (line.contains("Name: " + DEVICE_NAME)) {
+                        foundDevice = true;
+                    } else if (foundDevice && line.contains("Owner Module:")) {
+                        String moduleId = line.split(":")[1].trim();
+                        sinkModuleId = moduleId;
+                        LOGGER.debug("Found existing sink module ID: {}", sinkModuleId);
+                        break;
+                    }
+                }
+            }
+
+            // Try to find loopback module (optional)
+            String[] moduleCommand = {"pactl", "list", "modules", "short"};
+            ProcessResult moduleResult = runCommand(moduleCommand);
+
+            if (moduleResult.exitCode == 0) {
+                String[] lines = moduleResult.stdout.split("\n");
+                for (String line : lines) {
+                    if (line.contains("module-loopback") && line.contains(DEVICE_NAME)) {
+                        String[] parts = line.split("\\s+");
+                        if (parts.length > 0) {
+                            loopbackModuleId = parts[0];
+                            LOGGER.debug("Found existing loopback module ID: {}", loopbackModuleId);
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.debug("Error extracting module IDs: {}", e.getMessage());
+        }
+    }
+
     /**
      * Creates the PulseAudio null sink.
      * 
@@ -176,21 +255,58 @@ public class PulseAudioVirtualDevice {
      */
     private void createNullSink() throws IOException {
         LOGGER.debug("Creating PulseAudio null sink");
-        
+
+        // First test basic pactl connectivity
+        String[] infoCommand = {"pactl", "info"};
+        LOGGER.debug("Testing PulseAudio connection: {}", String.join(" ", infoCommand));
+        ProcessResult infoResult = runCommand(infoCommand);
+        if (infoResult.exitCode != 0) {
+            throw new IOException("PulseAudio connection failed: " + infoResult.stderr);
+        }
+        LOGGER.debug("PulseAudio connection successful");
+
         String[] command = {
             "pactl", "load-module", "module-null-sink",
             "sink_name=" + DEVICE_NAME
         };
-        
+
+        LOGGER.debug("Executing command: {}", String.join(" ", command));
         ProcessResult result = runCommand(command);
         if (result.exitCode != 0) {
+            LOGGER.error("Command failed with exit code: {}", result.exitCode);
+            LOGGER.error("STDOUT: {}", result.stdout);
+            LOGGER.error("STDERR: {}", result.stderr);
             throw new IOException("Failed to create null sink: " + result.stderr);
         }
-        
+
         sinkModuleId = result.stdout.trim();
         LOGGER.info("Created null sink with module ID: {}", sinkModuleId);
+
+        // Set the device description using pacmd
+        setDeviceDescription();
     }
-    
+
+    /**
+     * Sets the device description using pacmd.
+     *
+     * @throws IOException if setting description fails
+     */
+    private void setDeviceDescription() throws IOException {
+        LOGGER.debug("Setting device description: {}", DEVICE_DESCRIPTION);
+
+        String[] command = {
+            "pacmd", "update-sink-proplist", DEVICE_NAME,
+            "device.description=" + DEVICE_DESCRIPTION
+        };
+
+        ProcessResult result = runCommand(command);
+        if (result.exitCode == 0) {
+            LOGGER.debug("Device description set via pacmd");
+        } else {
+            LOGGER.warn("Failed to set device description via pacmd: {}", result.stderr);
+        }
+    }
+
     /**
      * Creates a loopback from the null sink for monitoring.
      * 

@@ -14,15 +14,11 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Security settings
+# Security settings (relaxed for Pi compatibility)
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/log/mediamtx /home/pi/rew-receiver
+ProtectSystem=no
+ProtectHome=no
 PrivateTmp=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
 
 # Resource limits for Pi Zero
 MemoryMax=128M

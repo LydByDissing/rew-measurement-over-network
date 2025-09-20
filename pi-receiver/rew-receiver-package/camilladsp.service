@@ -8,25 +8,18 @@ Wants=mediamtx.service
 Type=simple
 User=pi
 Group=audio
-ExecStart=/home/pi/rew-receiver/camilladsp -p 1234 /home/pi/rew-receiver/camilladsp.yml
+ExecStart=/home/pi/rew-receiver/camilladsp -v -p 1234 /home/pi/rew-receiver/camilladsp.yml
 WorkingDirectory=/home/pi/rew-receiver
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Ensure ALSA loopback is available
-ExecStartPre=/bin/bash -c 'modprobe snd-aloop || true'
-
-# Security settings
+# Security settings (relaxed for Pi compatibility)
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/home/pi/rew-receiver
+ProtectSystem=no
+ProtectHome=no
 PrivateTmp=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
 
 # Resource limits for Pi Zero
 MemoryMax=64M

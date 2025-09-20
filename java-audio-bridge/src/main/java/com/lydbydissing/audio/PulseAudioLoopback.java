@@ -30,10 +30,10 @@ public class PulseAudioLoopback {
     private static final Logger LOGGER = LoggerFactory.getLogger(PulseAudioLoopback.class);
     
     /** Name of the virtual output device. */
-    public static final String SINK_NAME = "REW_Network_Bridge";
+    public static final String SINK_NAME = "REW_Network_Audio_Bridge";
     
     /** Description that appears in audio applications. */
-    public static final String SINK_DESCRIPTION = "REW Network Audio Bridge";
+    public static final String SINK_DESCRIPTION = "REW_Network_Audio_Bridge";
     
     private final AtomicBoolean isActive = new AtomicBoolean(false);
     private String sinkModuleId;
