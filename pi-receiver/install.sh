@@ -29,7 +29,7 @@ sleep 2
 
 # Copy files
 log "Installing binaries and configurations..."
-if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml.template "$TARGET_DIR/" 2>/dev/null; then
+if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml camilladsp.yml.template "$TARGET_DIR/" 2>/dev/null; then
     error "Failed to copy binaries. Trying to force stop services and kill processes..."
     sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
     sudo pkill -f mediamtx 2>/dev/null || true
@@ -37,18 +37,75 @@ if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml.template "$TARGET_DIR/" 
     sleep 3
 
     log "Retrying file copy..."
-    cp mediamtx camilladsp mediamtx.yml camilladsp.yml.template "$TARGET_DIR/"
+    cp mediamtx camilladsp mediamtx.yml camilladsp.yml camilladsp.yml.template "$TARGET_DIR/"
 fi
 
-# Generate default camilladsp.yml from template
-log "Generating default CamillaDSP configuration from template..."
-AUDIO_DEVICE="hw:CARD=sndrpimerusamp" envsubst < "$TARGET_DIR/camilladsp.yml.template" > "$TARGET_DIR/camilladsp.yml"
-
-# Copy audio configuration scripts
+# Copy audio configuration scripts and tools
 log "Installing audio configuration tools..."
 cp configure-audio-device.sh validate-audio-device.sh test-merus-amp.sh "$TARGET_DIR/" 2>/dev/null || true
+
+# Copy additional test scripts
+[ -f "test-full-pipeline.sh" ] && cp test-full-pipeline.sh "$TARGET_DIR/" 2>/dev/null || true
+[ -f "test-rtp-stream.sh" ] && cp test-rtp-stream.sh "$TARGET_DIR/" 2>/dev/null || true
+[ -f "test-confirmed-working.sh" ] && cp test-confirmed-working.sh "$TARGET_DIR/" 2>/dev/null || true
+
+# Copy dependency management tools
+[ -f "install-dependencies.sh" ] && cp install-dependencies.sh "$TARGET_DIR/" 2>/dev/null || true
+[ -f "check-dependencies.sh" ] && cp check-dependencies.sh "$TARGET_DIR/" 2>/dev/null || true
+
+# Copy documentation and configuration files
 [ -f "AUDIO-DEVICE-CONFIG.md" ] && cp AUDIO-DEVICE-CONFIG.md "$TARGET_DIR/" 2>/dev/null || true
-chmod +x "$TARGET_DIR/mediamtx" "$TARGET_DIR/camilladsp" "$TARGET_DIR"/*.sh 2>/dev/null || true
+[ -f "WORKING-MERUS-CONFIG.md" ] && cp WORKING-MERUS-CONFIG.md "$TARGET_DIR/" 2>/dev/null || true
+[ -f "PIPELINE-VALIDATION-GUIDE.md" ] && cp PIPELINE-VALIDATION-GUIDE.md "$TARGET_DIR/" 2>/dev/null || true
+[ -f "DEPENDENCY-GUIDE.md" ] && cp DEPENDENCY-GUIDE.md "$TARGET_DIR/" 2>/dev/null || true
+[ -f "mediamtx-rtp.yml" ] && cp mediamtx-rtp.yml "$TARGET_DIR/" 2>/dev/null || true
+
+# Set execute permissions for all scripts
+chmod +x "$TARGET_DIR/mediamtx" "$TARGET_DIR/camilladsp" 2>/dev/null || true
+chmod +x "$TARGET_DIR"/*.sh 2>/dev/null || true
+
+# Check dependencies and offer to install them
+log "Checking system dependencies..."
+MISSING_DEPS=0
+CRITICAL_DEPS=("ffmpeg" "aplay" "speaker-test" "curl" "envsubst")
+
+for dep in "${CRITICAL_DEPS[@]}"; do
+    if ! command -v "$dep" >/dev/null 2>&1; then
+        warning "Missing dependency: $dep"
+        ((MISSING_DEPS++))
+    fi
+done
+
+if [ $MISSING_DEPS -gt 0 ]; then
+    warning "⚠️  $MISSING_DEPS critical dependencies are missing"
+    echo ""
+    log "Dependencies are needed for:"
+    log "• ffmpeg: RTP stream testing and media processing"
+    log "• aplay/speaker-test: Audio device testing"
+    log "• curl: API endpoint testing"
+    log "• envsubst: Configuration template processing"
+    echo ""
+    
+    # Check if we can install automatically
+    if [ -f "$TARGET_DIR/install-dependencies.sh" ]; then
+        read -p "Install missing dependencies automatically? [y/N]: " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log "Installing dependencies..."
+            if cd "$TARGET_DIR" && ./install-dependencies.sh; then
+                success "✅ Dependencies installed successfully"
+            else
+                warning "⚠️  Dependency installation had issues. You can run './install-dependencies.sh' later."
+            fi
+            cd "$CURRENT_DIR"
+        else
+            log "You can install dependencies later with: cd $TARGET_DIR && ./install-dependencies.sh"
+        fi
+    else
+        log "Install dependencies manually: sudo apt-get update && sudo apt-get install ffmpeg alsa-utils curl gettext-base"
+    fi
+else
+    success "✅ All critical dependencies are available"
+fi
 
 # Install systemd services
 log "Installing systemd services..."
@@ -77,21 +134,6 @@ if grep -q "Loopback" /proc/asound/cards 2>/dev/null; then
         sudo pkill pulseaudio 2>/dev/null || true
         sudo pkill jackd 2>/dev/null || true
         sleep 1
-    fi
-    
-    # Generate config from template with proper AUDIO_DEVICE
-    if [ -f "$TARGET_DIR/camilladsp.yml.template" ] && [ -f "$TARGET_DIR/configure-audio-device.sh" ]; then
-        log "Generating CamillaDSP configuration from template..."
-        cd "$TARGET_DIR"
-        # Use Merus amplifier if available, otherwise default to hw:0,0
-        if grep -q "sndrpimerusamp" /proc/asound/cards 2>/dev/null; then
-            AUDIO_DEVICE="hw:CARD=sndrpimerusamp" ./configure-audio-device.sh
-            success "Configured for Merus amplifier"
-        else
-            AUDIO_DEVICE="hw:0,0" ./configure-audio-device.sh
-            log "Configured for default audio device"
-        fi
-        cd - > /dev/null
     fi
 else
     warning "ALSA Loopback device not found, using fallback configuration"
@@ -145,11 +187,17 @@ if [ "$MEDIAMTX_ACTIVE" = "true" ]; then
     echo "• Restart MediaMTX: sudo systemctl restart mediamtx"
     echo "• Stop MediaMTX: sudo systemctl stop mediamtx"
     echo
+    warning "🔧 Dependencies (if needed):"
+    warning "• Check what's missing: cd $TARGET_DIR && ./check-dependencies.sh"
+    warning "• Install missing packages: cd $TARGET_DIR && ./install-dependencies.sh"
+    echo
     warning "🔧 Audio Device Configuration:"
     warning "• Configure for Merus amp: cd $TARGET_DIR && ./test-merus-amp.sh"
+    warning "• Test full pipeline: cd $TARGET_DIR && ./test-full-pipeline.sh"
+    warning "• Test RTP streaming: cd $TARGET_DIR && ./test-rtp-stream.sh"
     warning "• Configure custom device: cd $TARGET_DIR && ./configure-audio-device.sh -d DEVICE_NAME"
     warning "• Validate audio: cd $TARGET_DIR && ./validate-audio-device.sh -d DEVICE_NAME"
-    warning "• Read guide: cat $TARGET_DIR/AUDIO-DEVICE-CONFIG.md"
+    warning "• Read guides: cat $TARGET_DIR/AUDIO-DEVICE-CONFIG.md"
     echo
     warning "🔧 CamillaDSP Troubleshooting (when ready):"
     warning "• Check ALSA devices: cat /proc/asound/cards"

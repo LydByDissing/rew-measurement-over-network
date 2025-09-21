@@ -3,6 +3,18 @@ set -e
 
 echo "🎵 Starting REW MediaMTX Audio Receiver..."
 
+# Configure audio device (default to hw:0,0 if not specified)
+export AUDIO_DEVICE="${AUDIO_DEVICE:-hw:0,0}"
+echo "🔧 Configuring audio device: $AUDIO_DEVICE"
+
+# Generate CamillaDSP configuration from template if template exists
+if [ -f "/app/config/camilladsp.yml.template" ]; then
+    echo "🎚️  Generating CamillaDSP configuration for audio device: $AUDIO_DEVICE"
+    envsubst < /app/config/camilladsp.yml.template > /app/config/camilladsp.yml
+else
+    echo "⚠️  No CamillaDSP template found, using default configuration"
+fi
+
 # Start MediaMTX in background
 echo "📡 Starting MediaMTX..."
 mediamtx /app/config/mediamtx.yml &

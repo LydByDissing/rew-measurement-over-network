@@ -1,4 +1,5 @@
-# CamillaDSP Configuration for Raspberry Pi with ALSA loopback
+# CamillaDSP Configuration for MediaMTX → ALSA Loopback → Merus Amplifier
+# Template file - audio device is configurable via AUDIO_DEVICE environment variable
 devices:
   samplerate: 48000
   chunksize: 2048
@@ -9,14 +10,14 @@ devices:
   capture:
     type: Alsa
     channels: 2
-    device: "hw:Loopback,1,0"
+    device: "hw:Loopback,1,0"  # Capture from MediaMTX via ALSA loopback
     format: S16LE
 
   playback:
     type: Alsa
     channels: 2
-    device: "hw:0,0"
-    format: S16LE
+    device: "hw:CARD=sndrpimerusamp"  # Output to Merus amplifier (hw:CARD=sndrpimerusamp)
+    format: S32LE
 
 # Simple passthrough mixer
 mixers:

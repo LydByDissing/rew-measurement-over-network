@@ -1,28 +1,25 @@
-# CamillaDSP Minimal Configuration - avoids ALSA enumeration issues
+# CamillaDSP Configuration for MediaMTX → ALSA Loopback → Merus Amplifier
+# Template file - audio device is configurable via AUDIO_DEVICE environment variable
 devices:
   samplerate: 48000
-  chunksize: 4096
+  chunksize: 2048
   enable_rate_adjust: false
-  enable_resampling: false
-  resampler_type: BalancedAsync
-  capture_samplerate: 48000
   silence_threshold: -60
   silence_timeout: 3.0
-  target_level: 12000
-  adjust_period: 10
-  avoid_clipping: true
 
   capture:
-    type: Stdin
+    type: Alsa
     channels: 2
+    device: "hw:Loopback,1,0"  # Capture from MediaMTX via ALSA loopback
     format: S16LE
 
   playback:
-    type: Stdout
+    type: Alsa
     channels: 2
-    format: S16LE
+    device: "${AUDIO_DEVICE}"  # Output to Merus amplifier (hw:CARD=sndrpimerusamp)
+    format: S32LE
 
-# No processing - just pass through
+# Simple passthrough mixer
 mixers:
   main:
     channels:

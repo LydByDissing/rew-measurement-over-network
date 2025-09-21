@@ -51,6 +51,7 @@ services:
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
+      - AUDIO_DEVICE=${AUDIO_DEVICE:-hw:0,0}
     
     # User matching PipeWire user
     user: "1000:1000"

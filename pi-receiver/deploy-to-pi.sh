@@ -280,9 +280,68 @@ create_package() {
 
     # Copy configurations
     cp "$SCRIPT_DIR/mediamtx.yml" "$package_dir/"
-    cp "$SCRIPT_DIR/camilladsp.yml" "$package_dir/"
+    
+    # Generate default camilladsp.yml from template for package
+    if [ -f "$SCRIPT_DIR/camilladsp.yml.template" ]; then
+        log "Generating default CamillaDSP config from template..."
+        AUDIO_DEVICE="hw:CARD=sndrpimerusamp" envsubst < "$SCRIPT_DIR/camilladsp.yml.template" > "$package_dir/camilladsp.yml"
+    else
+        # Fallback to copying existing config if template doesn't exist
+        cp "$SCRIPT_DIR/camilladsp.yml" "$package_dir/"
+    fi
+    
     if [ -f "$SCRIPT_DIR/camilladsp-fallback.yml" ]; then
         cp "$SCRIPT_DIR/camilladsp-fallback.yml" "$package_dir/"
+    fi
+    
+    # Copy audio configuration template and scripts
+    if [ -f "$SCRIPT_DIR/camilladsp.yml.template" ]; then
+        cp "$SCRIPT_DIR/camilladsp.yml.template" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/configure-audio-device.sh" ]; then
+        cp "$SCRIPT_DIR/configure-audio-device.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/validate-audio-device.sh" ]; then
+        cp "$SCRIPT_DIR/validate-audio-device.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/test-merus-amp.sh" ]; then
+        cp "$SCRIPT_DIR/test-merus-amp.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/test-confirmed-working.sh" ]; then
+        cp "$SCRIPT_DIR/test-confirmed-working.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/AUDIO-DEVICE-CONFIG.md" ]; then
+        cp "$SCRIPT_DIR/AUDIO-DEVICE-CONFIG.md" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/WORKING-MERUS-CONFIG.md" ]; then
+        cp "$SCRIPT_DIR/WORKING-MERUS-CONFIG.md" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/test-full-pipeline.sh" ]; then
+        cp "$SCRIPT_DIR/test-full-pipeline.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/test-rtp-stream.sh" ]; then
+        cp "$SCRIPT_DIR/test-rtp-stream.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/mediamtx-rtp.yml" ]; then
+        cp "$SCRIPT_DIR/mediamtx-rtp.yml" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/PIPELINE-VALIDATION-GUIDE.md" ]; then
+        cp "$SCRIPT_DIR/PIPELINE-VALIDATION-GUIDE.md" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/install-dependencies.sh" ]; then
+        cp "$SCRIPT_DIR/install-dependencies.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/check-dependencies.sh" ]; then
+        cp "$SCRIPT_DIR/check-dependencies.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/DEPENDENCY-GUIDE.md" ]; then
+        cp "$SCRIPT_DIR/DEPENDENCY-GUIDE.md" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/diagnose-audio-environment.sh" ]; then
+        cp "$SCRIPT_DIR/diagnose-audio-environment.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/debug-camilladsp.sh" ]; then
+        cp "$SCRIPT_DIR/debug-camilladsp.sh" "$package_dir/"
     fi
 
     # Copy systemd services
@@ -326,7 +385,7 @@ sleep 2
 
 # Copy files
 log "Installing binaries and configurations..."
-if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml "$TARGET_DIR/" 2>/dev/null; then
+if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml.template "$TARGET_DIR/" 2>/dev/null; then
     error "Failed to copy binaries. Trying to force stop services and kill processes..."
     sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
     sudo pkill -f mediamtx 2>/dev/null || true
@@ -334,9 +393,18 @@ if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml "$TARGET_DIR/" 2>/dev/nu
     sleep 3
 
     log "Retrying file copy..."
-    cp mediamtx camilladsp mediamtx.yml camilladsp.yml "$TARGET_DIR/"
+    cp mediamtx camilladsp mediamtx.yml camilladsp.yml.template "$TARGET_DIR/"
 fi
-chmod +x "$TARGET_DIR/mediamtx" "$TARGET_DIR/camilladsp"
+
+# Generate default camilladsp.yml from template
+log "Generating default CamillaDSP configuration from template..."
+AUDIO_DEVICE="hw:CARD=sndrpimerusamp" envsubst < "$TARGET_DIR/camilladsp.yml.template" > "$TARGET_DIR/camilladsp.yml"
+
+# Copy audio configuration scripts
+log "Installing audio configuration tools..."
+cp configure-audio-device.sh validate-audio-device.sh test-merus-amp.sh "$TARGET_DIR/" 2>/dev/null || true
+[ -f "AUDIO-DEVICE-CONFIG.md" ] && cp AUDIO-DEVICE-CONFIG.md "$TARGET_DIR/" 2>/dev/null || true
+chmod +x "$TARGET_DIR/mediamtx" "$TARGET_DIR/camilladsp" "$TARGET_DIR"/*.sh 2>/dev/null || true
 
 # Install systemd services
 log "Installing systemd services..."
@@ -365,6 +433,21 @@ if grep -q "Loopback" /proc/asound/cards 2>/dev/null; then
         sudo pkill pulseaudio 2>/dev/null || true
         sudo pkill jackd 2>/dev/null || true
         sleep 1
+    fi
+    
+    # Generate config from template with proper AUDIO_DEVICE
+    if [ -f "$TARGET_DIR/camilladsp.yml.template" ] && [ -f "$TARGET_DIR/configure-audio-device.sh" ]; then
+        log "Generating CamillaDSP configuration from template..."
+        cd "$TARGET_DIR"
+        # Use Merus amplifier if available, otherwise default to hw:0,0
+        if grep -q "sndrpimerusamp" /proc/asound/cards 2>/dev/null; then
+            AUDIO_DEVICE="hw:CARD=sndrpimerusamp" ./configure-audio-device.sh
+            success "Configured for Merus amplifier"
+        else
+            AUDIO_DEVICE="hw:0,0" ./configure-audio-device.sh
+            log "Configured for default audio device"
+        fi
+        cd - > /dev/null
     fi
 else
     warning "ALSA Loopback device not found, using fallback configuration"
@@ -418,6 +501,12 @@ if [ "$MEDIAMTX_ACTIVE" = "true" ]; then
     echo "• Restart MediaMTX: sudo systemctl restart mediamtx"
     echo "• Stop MediaMTX: sudo systemctl stop mediamtx"
     echo
+    warning "🔧 Audio Device Configuration:"
+    warning "• Configure for Merus amp: cd $TARGET_DIR && ./test-merus-amp.sh"
+    warning "• Configure custom device: cd $TARGET_DIR && ./configure-audio-device.sh -d DEVICE_NAME"
+    warning "• Validate audio: cd $TARGET_DIR && ./validate-audio-device.sh -d DEVICE_NAME"
+    warning "• Read guide: cat $TARGET_DIR/AUDIO-DEVICE-CONFIG.md"
+    echo
     warning "🔧 CamillaDSP Troubleshooting (when ready):"
     warning "• Check ALSA devices: cat /proc/asound/cards"
     warning "• Check CamillaDSP logs: sudo journalctl -u camilladsp -f"
@@ -432,6 +521,18 @@ INSTALL_EOF
     fi
 
     chmod +x "$package_dir/install.sh"
+    
+    # Make audio configuration scripts executable
+    [ -f "$package_dir/configure-audio-device.sh" ] && chmod +x "$package_dir/configure-audio-device.sh"
+    [ -f "$package_dir/validate-audio-device.sh" ] && chmod +x "$package_dir/validate-audio-device.sh"
+    [ -f "$package_dir/test-merus-amp.sh" ] && chmod +x "$package_dir/test-merus-amp.sh"
+    [ -f "$package_dir/test-confirmed-working.sh" ] && chmod +x "$package_dir/test-confirmed-working.sh"
+    [ -f "$package_dir/test-full-pipeline.sh" ] && chmod +x "$package_dir/test-full-pipeline.sh"
+    [ -f "$package_dir/test-rtp-stream.sh" ] && chmod +x "$package_dir/test-rtp-stream.sh"
+    [ -f "$package_dir/install-dependencies.sh" ] && chmod +x "$package_dir/install-dependencies.sh"
+    [ -f "$package_dir/check-dependencies.sh" ] && chmod +x "$package_dir/check-dependencies.sh"
+    [ -f "$package_dir/diagnose-audio-environment.sh" ] && chmod +x "$package_dir/diagnose-audio-environment.sh"
+    [ -f "$package_dir/debug-camilladsp.sh" ] && chmod +x "$package_dir/debug-camilladsp.sh"
 
     success "Deployment package created in $package_dir/"
 }
@@ -640,15 +741,14 @@ deploy_remote() {
 
     log "Deploying native MediaMTX binaries to remote Pi: $SSH_TARGET"
 
-    # Check if tarball exists
+    # Always create fresh package and tarball for deploy-remote
+    log "Creating fresh deployment package with latest files..."
+    create_package
+    create_tarball
+    
+    # Get the latest tarball
     local export_dir="$SCRIPT_DIR/export"
     local latest_tarball=$(ls -t "$export_dir"/rew-receiver-native-*.tar.gz 2>/dev/null | head -1)
-
-    if [ -z "$latest_tarball" ]; then
-        log "No deployment tarball found, creating one..."
-        create_tarball
-        latest_tarball=$(ls -t "$export_dir"/rew-receiver-native-*.tar.gz 2>/dev/null | head -1)
-    fi
 
     log "Using tarball: $(basename "$latest_tarball")"
 
@@ -683,10 +783,12 @@ deploy_remote() {
     echo
     echo "🔗 Next Steps:"
     echo "1. SSH to Pi: ssh $SSH_TARGET"
-    echo "2. Test API: curl http://$SSH_HOST:9997/v3/config"
-    echo "3. View logs: ssh $SSH_TARGET 'sudo journalctl -u mediamtx -u camilladsp -f'"
-    echo "4. Configure REW: Send RTP to $SSH_HOST:5004"
-    echo "5. Check status: ssh $SSH_TARGET 'sudo systemctl status mediamtx camilladsp'"
+    echo "2. Check dependencies: ssh $SSH_TARGET 'cd /home/pi/rew-receiver && ./check-dependencies.sh'"
+    echo "3. Install missing deps: ssh $SSH_TARGET 'cd /home/pi/rew-receiver && ./install-dependencies.sh'"
+    echo "4. Test Merus amp: ssh $SSH_TARGET 'cd /home/pi/rew-receiver && ./test-merus-amp.sh'"
+    echo "5. Test full pipeline: ssh $SSH_TARGET 'cd /home/pi/rew-receiver && ./test-full-pipeline.sh'"
+    echo "6. Test RTP streaming: ssh $SSH_TARGET 'cd /home/pi/rew-receiver && ./test-rtp-stream.sh'"
+    echo "7. Configure REW: Send RTP to $SSH_HOST:5004"
 }
 
 # Test ARM container with emulation
