@@ -9,7 +9,7 @@ set -e
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MEDIAMTX_VERSION="v1.12.3"
-CAMILLADSP_VERSION="v2.0.3"
+CAMILLADSP_VERSION="v3.0.1"
 PACKAGE_NAME="rew-receiver-package"
 
 # Versioning configuration

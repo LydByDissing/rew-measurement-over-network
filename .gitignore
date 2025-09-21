@@ -83,4 +83,16 @@ IMPLEMENTATION_PLAN.md
 # Java
 
 **/target
-pi-receiver/export
+
+# Pi Receiver Binaries and Build Artifacts
+pi-receiver/export/
+pi-receiver/binaries/camilladsp
+pi-receiver/binaries/mediamtx
+pi-receiver/binaries/*.tar.gz
+pi-receiver/binaries/*_backup
+pi-receiver/rew-receiver-package/camilladsp
+pi-receiver/rew-receiver-package/mediamtx
+
+# Downloaded archives
+*.tar.gz
+*.tgz
