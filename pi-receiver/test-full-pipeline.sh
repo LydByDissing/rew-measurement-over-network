@@ -19,7 +19,7 @@ warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 AUDIO_DEVICE="hw:CARD=sndrpimerusamp"
 CAMILLADSP_PORT=1234
 MEDIAMTX_API_PORT=9997
-RTP_PORT=5004
+RTP_PORT=8000
 
 log "🎵 Testing Complete Audio Pipeline"
 log "MediaMTX → CamillaDSP → Merus Amplifier"
@@ -54,7 +54,7 @@ if pgrep -f camilladsp > /dev/null; then
 fi
 
 log "Starting CamillaDSP on port $CAMILLADSP_PORT..."
-./camilladsp -v -p $CAMILLADSP_PORT "$(pwd)/camilladsp.yml" &
+./camilladsp -p $CAMILLADSP_PORT "$(pwd)/camilladsp.yml" &
 CAMILLADSP_PID=$!
 sleep 3
 
@@ -63,7 +63,7 @@ if kill -0 $CAMILLADSP_PID 2>/dev/null; then
     success "✅ CamillaDSP started successfully (PID: $CAMILLADSP_PID)"
     
     # Test CamillaDSP API
-    if curl -s http://localhost:$CAMILLADSP_PORT/api/v1/state >/dev/null; then
+    if curl -s http://127.0.0.1:$CAMILLADSP_PORT/api/v1/state >/dev/null; then
         success "✅ CamillaDSP API responding"
     else
         warning "⚠️  CamillaDSP API not responding"
@@ -82,7 +82,7 @@ if pgrep -f mediamtx > /dev/null; then
 fi
 
 log "Starting MediaMTX..."
-mediamtx mediamtx.yml &
+./mediamtx mediamtx.yml &
 MEDIAMTX_PID=$!
 sleep 3
 
@@ -91,8 +91,23 @@ if kill -0 $MEDIAMTX_PID 2>/dev/null; then
     success "✅ MediaMTX started successfully (PID: $MEDIAMTX_PID)"
     
     # Test MediaMTX API
-    if curl -s http://localhost:$MEDIAMTX_API_PORT/v3/config >/dev/null; then
+    if curl -s http://127.0.0.1:$MEDIAMTX_API_PORT/v3/paths/list >/dev/null; then
         success "✅ MediaMTX API responding"
+        
+        # Test MediaMTX paths endpoint
+        log "Checking MediaMTX paths configuration..."
+        if curl -s http://127.0.0.1:$MEDIAMTX_API_PORT/v3/paths/list >/dev/null; then
+            success "✅ MediaMTX paths endpoint responding"
+            
+            # Check if rew_audio path is configured
+            if curl -s http://127.0.0.1:$MEDIAMTX_API_PORT/v3/paths/list | grep -q "rew_audio"; then
+                success "✅ RTP audio path (rew_audio) is configured"
+            else
+                warning "⚠️  RTP audio path (rew_audio) not found in configuration"
+            fi
+        else
+            warning "⚠️  MediaMTX paths endpoint not responding"
+        fi
     else
         warning "⚠️  MediaMTX API not responding"
     fi
@@ -112,20 +127,92 @@ log "• Audio Device: $AUDIO_DEVICE"
 log "• RTP Input Port: $RTP_PORT"
 
 echo ""
-log "🔊 Testing direct audio output (bypass test)..."
+log "🔊 Testing CamillaDSP pipeline (loopback test)..."
 log "This should play through CamillaDSP to the Merus amplifier..."
 
-# Test direct audio through CamillaDSP to verify the chain works
-speaker-test -D "$AUDIO_DEVICE" -c 2 -r 48000 -F S32_LE -t sine -f 440 -l 1 -p 2000 2>/dev/null &
+# Test audio through the loopback device that CamillaDSP is monitoring
+# This properly tests the CamillaDSP pipeline without device conflicts
+speaker-test -D "plughw:CARD=Loopback,DEV=0" -c 2 -r 48000 -F S16LE -t sine -f 440 -l 1 -p 2000 2>/dev/null &
 TEST_PID=$!
 
 sleep 3
 
 if kill -0 $TEST_PID 2>/dev/null; then
     wait $TEST_PID
-    success "✅ Direct audio test completed"
+    success "✅ CamillaDSP pipeline test completed"
 else
-    warning "⚠️  Direct audio test had issues"
+    warning "⚠️  CamillaDSP pipeline test had issues"
+fi
+
+echo ""
+log "🎵 Testing RTP audio reception and forwarding..."
+
+# Test RTP audio pipeline using our RTP bridge or MediaMTX
+if [ -f "./rtp-to-alsa.sh" ]; then
+    log "Testing RTP-to-ALSA bridge..."
+    
+    # Start RTP bridge in background
+    ./rtp-to-alsa.sh -p $RTP_PORT >/dev/null 2>&1 &
+    RTP_BRIDGE_PID=$!
+    sleep 2
+    
+    if kill -0 $RTP_BRIDGE_PID 2>/dev/null; then
+        success "✅ RTP-to-ALSA bridge started (PID: $RTP_BRIDGE_PID)"
+        
+        # Test RTP audio stream
+        log "Sending test RTP audio stream..."
+        log "🔊 You should hear a 1000Hz tone for 5 seconds through the Merus amplifier..."
+        
+        # Generate test RTP stream
+        timeout 5 ffmpeg -f lavfi -i "sine=frequency=1000:duration=5" \
+                         -ar 48000 -ac 2 -f rtp "rtp://127.0.0.1:$RTP_PORT" \
+                         -loglevel error >/dev/null 2>&1 &
+        RTP_TEST_PID=$!
+        
+        # Wait for test to complete
+        wait $RTP_TEST_PID
+        RTP_EXIT_CODE=$?
+        
+        if [ $RTP_EXIT_CODE -eq 0 ] || [ $RTP_EXIT_CODE -eq 124 ]; then  # 124 = timeout success
+            success "✅ RTP audio test stream completed"
+            log "If you heard the tone, the complete RTP → CamillaDSP → Merus pipeline is working!"
+        else
+            warning "⚠️  RTP audio test stream failed (exit code: $RTP_EXIT_CODE)"
+        fi
+        
+        # Stop RTP bridge
+        kill $RTP_BRIDGE_PID 2>/dev/null || true
+        wait $RTP_BRIDGE_PID 2>/dev/null || true
+        log "RTP-to-ALSA bridge stopped"
+        
+    else
+        warning "⚠️  Failed to start RTP-to-ALSA bridge"
+    fi
+else
+    log "RTP-to-ALSA bridge script not found, testing with direct ffmpeg..."
+    
+    # Direct test without bridge
+    log "Testing direct RTP reception..."
+    log "🔊 You should hear a 1000Hz tone for 3 seconds through the Merus amplifier..."
+    
+    # Start direct RTP-to-ALSA forwarding in background
+    timeout 10 ffmpeg -f rtp -i rtp://127.0.0.1:$RTP_PORT \
+                      -f alsa -acodec pcm_s16le -ac 2 -ar 48000 plughw:CARD=Loopback,DEV=0 \
+                      -loglevel error >/dev/null 2>&1 &
+    RTP_RECEIVER_PID=$!
+    
+    sleep 1
+    
+    # Send test stream
+    timeout 3 ffmpeg -f lavfi -i "sine=frequency=1000:duration=3" \
+                     -ar 48000 -ac 2 -f rtp "rtp://127.0.0.1:$RTP_PORT" \
+                     -loglevel error >/dev/null 2>&1
+    
+    success "✅ Direct RTP test completed"
+    
+    # Clean up
+    kill $RTP_RECEIVER_PID 2>/dev/null || true
+    wait $RTP_RECEIVER_PID 2>/dev/null || true
 fi
 
 echo ""
@@ -149,8 +236,8 @@ log "=================================================="
 log "Services are running and ready for RTP input"
 log ""
 log "🔗 Access Points:"
-log "• MediaMTX API: http://localhost:$MEDIAMTX_API_PORT"
-log "• CamillaDSP API: http://localhost:$CAMILLADSP_PORT"
+log "• MediaMTX API: http://127.0.0.1:$MEDIAMTX_API_PORT"
+log "• CamillaDSP API: http://127.0.0.1:$CAMILLADSP_PORT"
 log "• RTP Input: Send to port $RTP_PORT"
 log ""
 log "🎵 To test with REW:"

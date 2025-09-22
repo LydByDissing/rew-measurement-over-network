@@ -80,10 +80,10 @@ Expected output:
 
 ```bash
 # Start CamillaDSP
-camilladsp -p 1234 camilladsp.yml &
+./camilladsp -p 1234 camilladsp.yml &
 
 # Start MediaMTX
-mediamtx mediamtx.yml &
+./mediamtx mediamtx.yml &
 
 # Stop services
 pkill -f camilladsp

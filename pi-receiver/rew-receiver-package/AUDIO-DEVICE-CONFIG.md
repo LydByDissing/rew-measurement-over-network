@@ -52,7 +52,7 @@ This script will:
 speaker-test -D "hw:CARD=sndrpimerusamp" -c 2 -r 48000 -F S32_LE -t sine -f 1000 -l 1 -p 3000
 
 # Test CamillaDSP configuration
-camilladsp -c camilladsp.yml
+./camilladsp -c camilladsp.yml
 ```
 
 ## Common Audio Devices
@@ -138,8 +138,8 @@ RTP Input (port 5004) → MediaMTX → CamillaDSP → Audio Device (hw:CARD=sndr
 ./validate-audio-device.sh -d "hw:CARD=sndrpimerusamp"
 
 # 3. Start services (if validation successful)
-camilladsp -p 1234 camilladsp.yml &
-mediamtx mediamtx.yml &
+./camilladsp -p 1234 camilladsp.yml &
+./mediamtx mediamtx.yml &
 
 # 4. Test RTP streaming to port 5004
 ```

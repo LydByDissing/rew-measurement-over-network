@@ -8,18 +8,25 @@ Wants=mediamtx.service
 Type=simple
 User=pi
 Group=audio
-ExecStart=/home/pi/rew-receiver/camilladsp -v -p 1234 /home/pi/rew-receiver/camilladsp.yml
+ExecStartPre=/bin/sleep 3
+ExecStart=/home/pi/rew-receiver/camilladsp -p 1234 /home/pi/rew-receiver/camilladsp.yml
 WorkingDirectory=/home/pi/rew-receiver
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Security settings (relaxed for Pi compatibility)
+# Environment for ALSA access
+Environment="HOME=/home/pi"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="ALSA_CONF_PATH=/usr/share/alsa/alsa.conf"
+
+# Security settings (relaxed for Pi compatibility and ALSA access)
 NoNewPrivileges=yes
 ProtectSystem=no
 ProtectHome=no
-PrivateTmp=yes
+PrivateTmp=no
+PrivateDevices=no
 
 # Resource limits for Pi Zero
 MemoryMax=64M

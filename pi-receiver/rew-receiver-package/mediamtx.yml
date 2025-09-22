@@ -5,10 +5,22 @@ logLevel: info
 api: true
 apiAddress: 0.0.0.0:9997
 
+
 # RTSP server
 rtspAddress: 0.0.0.0:8554
 
-# Paths
+# RTP server for receiving streams
+rtpAddress: 0.0.0.0:8000
+
+# WebRTC configuration  
+webrtcAddress: 0.0.0.0:8889
+
+# Paths configuration
 paths:
+  # Default path for all streams
   all:
+    source: publisher
+    
+  # REW audio path - for monitoring and control (actual RTP handled by rtp-to-alsa.sh)
+  rew_audio:
     source: publisher

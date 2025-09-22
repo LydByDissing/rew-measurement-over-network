@@ -10,7 +10,7 @@ devices:
   capture:
     type: Alsa
     channels: 2
-    device: "hw:Loopback,1,0"  # Capture from MediaMTX via ALSA loopback
+    device: "plughw:CARD=Loopback,DEV=1"  # Capture from MediaMTX via ALSA loopback with plug layer
     format: S16LE
 
   playback:

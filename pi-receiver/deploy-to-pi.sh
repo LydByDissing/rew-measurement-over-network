@@ -322,9 +322,16 @@ create_package() {
     if [ -f "$SCRIPT_DIR/test-rtp-stream.sh" ]; then
         cp "$SCRIPT_DIR/test-rtp-stream.sh" "$package_dir/"
     fi
-    if [ -f "$SCRIPT_DIR/mediamtx-rtp.yml" ]; then
-        cp "$SCRIPT_DIR/mediamtx-rtp.yml" "$package_dir/"
+    if [ -f "$SCRIPT_DIR/rtp-to-alsa.sh" ]; then
+        cp "$SCRIPT_DIR/rtp-to-alsa.sh" "$package_dir/"
     fi
+    if [ -f "$SCRIPT_DIR/udp-to-alsa.sh" ]; then
+        cp "$SCRIPT_DIR/udp-to-alsa.sh" "$package_dir/"
+    fi
+    if [ -f "$SCRIPT_DIR/test-mediamtx-rtp.sh" ]; then
+        cp "$SCRIPT_DIR/test-mediamtx-rtp.sh" "$package_dir/"
+    fi
+
     if [ -f "$SCRIPT_DIR/PIPELINE-VALIDATION-GUIDE.md" ]; then
         cp "$SCRIPT_DIR/PIPELINE-VALIDATION-GUIDE.md" "$package_dir/"
     fi
@@ -533,6 +540,9 @@ INSTALL_EOF
     [ -f "$package_dir/check-dependencies.sh" ] && chmod +x "$package_dir/check-dependencies.sh"
     [ -f "$package_dir/diagnose-audio-environment.sh" ] && chmod +x "$package_dir/diagnose-audio-environment.sh"
     [ -f "$package_dir/debug-camilladsp.sh" ] && chmod +x "$package_dir/debug-camilladsp.sh"
+    [ -f "$package_dir/rtp-to-alsa.sh" ] && chmod +x "$package_dir/rtp-to-alsa.sh"
+    [ -f "$package_dir/udp-to-alsa.sh" ] && chmod +x "$package_dir/udp-to-alsa.sh"
+    [ -f "$package_dir/test-mediamtx-rtp.sh" ] && chmod +x "$package_dir/test-mediamtx-rtp.sh"
 
     success "Deployment package created in $package_dir/"
 }

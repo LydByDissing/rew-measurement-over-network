@@ -16,7 +16,8 @@ devices:
     type: Alsa
     channels: 2
     device: "hw:0,0"
-    format: S16LE
+    format: S32LE
+    avoid_blocking_read: true
 
 # Simple passthrough mixer
 mixers:
