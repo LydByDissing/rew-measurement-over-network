@@ -268,16 +268,21 @@ install_local() {
     if systemctl is-active --quiet camilladsp; then
         success "🎉 REW Audio Receiver installed successfully!"
         log ""
-        log "Services:"
-        log "• CamillaDSP: Running"
-        log "• Bridge scripts available: rtp-to-alsa.sh, udp-to-alsa.sh"
+        log "🎵 Ready for REW audio measurements with:"
+        log "• CamillaDSP: Running on http://localhost:1234"
+        log "• Bridge Management: $TARGET_DIR/manage-bridges.sh"
+        log "• Multiple RTP bridge options available"
         log ""
-        log "Usage:"
-        log "• Start RTP bridge: $TARGET_DIR/rtp-to-alsa.sh"
-        log "• Start UDP bridge: $TARGET_DIR/udp-to-alsa.sh"
-        log "• CamillaDSP API: http://localhost:1234"
+        log "🎯 Quick Start for REW measurements:"
+        log "• Start REW bridge: $TARGET_DIR/manage-bridges.sh start-rew"
+        log "• Check bridge status: $TARGET_DIR/manage-bridges.sh status"
         log ""
-        log "Management:"
+        log "Bridge Options:"
+        log "• REW-specific (recommended): Auto-restart between measurements"
+        log "• Ultra-robust: Maximum packet loss tolerance"
+        log "• Manual: User-controlled operation"
+        log ""
+        log "System Management:"
         log "• View CamillaDSP logs: sudo journalctl -u camilladsp -f"
         log "• Restart CamillaDSP: sudo systemctl restart camilladsp"
         log "• Stop CamillaDSP: sudo systemctl stop camilladsp"
@@ -342,17 +347,27 @@ deploy_remote() {
     
     success "🎉 Native deployment to Pi completed!"
     
-    log "Pi is ready for audio processing with:"
+    # Automatically start the REW-specific RTP bridge
+    log "🚀 Starting REW RTP Bridge by default..."
+    ssh $ssh_opts "$ssh_target" "/home/pi/rew-receiver/manage-bridges.sh start-rew" >/dev/null 2>&1 &
+    sleep 2
+    
+    success "✅ REW RTP Bridge started and ready for measurements!"
+    
+    log ""
+    log "🎵 Pi is ready for REW audio measurements with:"
     log "• CamillaDSP: Running via systemd"
-    log "• RTP Bridge: $ssh_target:/home/pi/rew-receiver/rtp-to-alsa.sh"
-    log "• UDP Bridge: $ssh_target:/home/pi/rew-receiver/udp-to-alsa.sh"
+    log "• REW RTP Bridge: Auto-started and ready (port 5004)"
+    log "• Bridge Management: ssh $ssh_target '/home/pi/rew-receiver/manage-bridges.sh status'"
     log ""
-    log "Bridge Services (optional):"
-    log "• Start as service: ssh $ssh_target 'sudo systemctl start udp-bridge'"
-    log "• Start RTP service: ssh $ssh_target 'sudo systemctl start rtp-bridge'"
+    log "🎯 Ready for REW measurements! Use this FFmpeg command:"
+    echo "ffmpeg -f lavfi -i \"sine=frequency=1000:duration=3\" -ar 48000 -ac 2 -acodec pcm_s16le -f rtp -payload_type 10 -pkt_size 1200 rtp://$(echo $ssh_target | cut -d'@' -f2):5004"
     log ""
-    log "Test with your command:"
-    echo "ffmpeg -f lavfi -i \"sine=frequency=1000:duration=10\" -ar 48000 -ac 2 -acodec pcm_s16le -b:a 1536k -f wav udp://$(echo $ssh_target | cut -d'@' -f2):8000?pkt_size=1316"
+    log "Bridge Management Commands:"
+    log "• Check status: ssh $ssh_target '/home/pi/rew-receiver/manage-bridges.sh status'"
+    log "• Start REW bridge: ssh $ssh_target '/home/pi/rew-receiver/manage-bridges.sh start-rew'"
+    log "• Start robust bridge: ssh $ssh_target '/home/pi/rew-receiver/manage-bridges.sh start-robust'"
+    log "• Stop all bridges: ssh $ssh_target '/home/pi/rew-receiver/manage-bridges.sh stop'"
 }
 
 # Test installation
