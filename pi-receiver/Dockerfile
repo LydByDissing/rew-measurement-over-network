@@ -1,9 +1,9 @@
-# Dockerfile for REW MediaMTX + CamillaDSP Audio Receiver
+# Dockerfile for REW Audio Receiver with CamillaDSP + RTP/UDP bridges
 # Using Alpine with glibc compatibility for CamillaDSP
 
 FROM alpine:3.18
 
-# Install glibc compatibility and runtime dependencies
+# Install runtime dependencies
 RUN apk add --no-cache \
     alsa-lib \
     alsa-utils \
@@ -15,10 +15,11 @@ RUN apk add --no-cache \
     curl \
     net-tools \
     gcompat \
-    libstdc++
+    libstdc++ \
+    bash
 
 # Create app user
-RUN addgroup -g 1000 rew && adduser -u 1000 -G rew -s /bin/sh -D rew
+RUN addgroup -g 1000 rew && adduser -u 1000 -G rew -s /bin/bash -D rew
 
 # Create directories
 RUN mkdir -p /app/config /app/logs /tmp/audio && \
@@ -26,22 +27,9 @@ RUN mkdir -p /app/config /app/logs /tmp/audio && \
 
 # Download binaries based on architecture
 ARG TARGETARCH
-ARG MEDIAMTX_VERSION=v1.12.3
 ARG CAMILLADSP_VERSION=v3.0.1
 
 WORKDIR /tmp
-
-# Download and install MediaMTX
-RUN case ${TARGETARCH:-amd64} in \
-    amd64) ARCH="amd64" ;; \
-    arm) ARCH="armv6" ;; \
-    arm64) ARCH="arm64v8" ;; \
-    *) ARCH="amd64" ;; \
-    esac && \
-    wget -O mediamtx.tar.gz "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_linux_${ARCH}.tar.gz" && \
-    tar xzf mediamtx.tar.gz && \
-    cp mediamtx /usr/local/bin/ && \
-    chmod +x /usr/local/bin/mediamtx
 
 # Download and install CamillaDSP with glibc compatibility
 RUN case ${TARGETARCH:-amd64} in \
@@ -57,25 +45,26 @@ RUN case ${TARGETARCH:-amd64} in \
     rm -f camilladsp.tar.gz
 
 # Copy configuration files
-COPY mediamtx.yml /app/config/mediamtx.yml
 COPY camilladsp.yml /app/config/camilladsp.yml
 
-# Copy startup script and audio test utility
+# Copy bridge scripts and utilities
+COPY rtp-to-alsa.sh /app/rtp-to-alsa.sh
+COPY udp-to-alsa.sh /app/udp-to-alsa.sh
 COPY start.sh /app/start.sh
 COPY test-audio.sh /app/test-audio.sh
 
-RUN chmod +x /app/start.sh /app/test-audio.sh && chown -R rew:rew /app
+RUN chmod +x /app/*.sh && chown -R rew:rew /app
 
 # Switch to app user
 USER rew
 WORKDIR /app
 
 # Expose ports
-EXPOSE 8554/tcp 9997/tcp 1234/tcp 5004/udp 8000/udp
+EXPOSE 1234/tcp 8000/udp 5004/udp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:9997/v3/config || exit 1
+    CMD curl -f http://localhost:1234/api/config || exit 1
 
 # Use tini for proper signal handling
 ENTRYPOINT ["/sbin/tini", "--"]

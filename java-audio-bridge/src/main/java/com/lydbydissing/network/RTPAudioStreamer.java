@@ -42,8 +42,8 @@ public class RTPAudioStreamer {
     /** Default RTP port for audio streaming. */
     public static final int DEFAULT_RTP_PORT = 5004;
     
-    /** Default MediaMTX API port. */
-    public static final int DEFAULT_MEDIAMTX_API_PORT = 9997;
+    /** Default audio receiver API port (CamillaDSP). */
+    public static final int DEFAULT_AUDIO_API_PORT = 1234;
     
     /** Maximum RTP packet size (excluding headers). */
     private static final int MAX_PACKET_SIZE = 1200;
@@ -100,7 +100,7 @@ public class RTPAudioStreamer {
         // Create UDP socket
         this.socket = new DatagramSocket();
         
-        // Create HTTP client for MediaMTX API health checks
+        // Create HTTP client for audio receiver API health checks
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
@@ -351,15 +351,15 @@ public class RTPAudioStreamer {
     }
     
     /**
-     * Gets the real connection status by checking MediaMTX API.
+     * Gets the real connection status by checking audio receiver API.
      * 
      * @return Connection status description
      */
     private String getConnectionStatus() {
         try {
-            // Check MediaMTX API health
-            URI apiUri = URI.create(String.format("http://%s:%d/v3/config", 
-                targetAddress.getHostAddress(), DEFAULT_MEDIAMTX_API_PORT));
+            // Check audio receiver API health
+            URI apiUri = URI.create(String.format("http://%s:%d/api/config", 
+                targetAddress.getHostAddress(), DEFAULT_AUDIO_API_PORT));
             
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(apiUri)
@@ -371,7 +371,7 @@ public class RTPAudioStreamer {
                 HttpResponse.BodyHandlers.ofString());
             
             if (response.statusCode() == 200 || response.statusCode() == 401) {
-                // MediaMTX is running and responsive (200=OK, 401=needs auth but alive)
+                // Audio receiver is running and responsive (200=OK, 401=needs auth but alive)
                 long now = System.currentTimeMillis();
                 long timeSinceLastSend = now - lastSuccessfulSend;
                 
@@ -380,15 +380,15 @@ public class RTPAudioStreamer {
                 } else if (timeSinceLastSend < 5000) {
                     return "SLOW";
                 } else {
-                    return "API_ONLY"; // MediaMTX running but not receiving RTP
+                    return "API_ONLY"; // Audio receiver running but not receiving RTP
                 }
             } else {
                 return "API_ERROR";
             }
             
         } catch (Exception e) {
-            // MediaMTX API not accessible
-            LOGGER.trace("MediaMTX API health check failed: {}", e.getMessage());
+            // Audio receiver API not accessible
+            LOGGER.trace("Audio receiver API health check failed: {}", e.getMessage());
             return "OFFLINE";
         }
     }

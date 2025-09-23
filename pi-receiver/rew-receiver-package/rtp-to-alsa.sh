@@ -17,7 +17,7 @@ success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 
 # Configuration
-RTP_PORT="${RTP_PORT:-8000}"
+RTP_PORT="${RTP_PORT:-5004}"
 ALSA_DEVICE="${ALSA_DEVICE:-plughw:CARD=Loopback,DEV=0}"
 SAMPLE_RATE="${SAMPLE_RATE:-48000}"
 CHANNELS="${CHANNELS:-2}"
@@ -94,14 +94,14 @@ log "🎯 Starting FFmpeg RTP receiver..."
 log "Listening for RTP streams on port $RTP_PORT"
 log "Press Ctrl+C to stop"
 
-# Build FFmpeg command with SDP file for RTP payload type description
+# Check if SDP file exists for better RTP payload handling
 SDP_FILE="${SCRIPT_DIR:-$(dirname "$0")}/audio.sdp"
 if [ -f "$SDP_FILE" ]; then
-    FFMPEG_CMD="ffmpeg -y -protocol_whitelist file,rtp,udp -i $SDP_FILE -f alsa -acodec pcm_s16le -ac $CHANNELS -ar $SAMPLE_RATE $ALSA_DEVICE"
+    # Use SDP file for precise RTP payload type handling (eliminates "guessing" warnings)
+    FFMPEG_CMD="ffmpeg -y -protocol_whitelist file,rtp,udp -analyzeduration 2000000 -probesize 65536 -fflags +genpts -avoid_negative_ts make_zero -i $SDP_FILE -f alsa -acodec pcm_s16le -ac $CHANNELS -ar $SAMPLE_RATE $ALSA_DEVICE"
 else
-    # Fallback to direct RTP (might have payload type issues)
-    # Add RTP buffer settings and frame timing for better stability
-    FFMPEG_CMD="ffmpeg -y -f rtp -rtp_flags listen_timeout -max_delay 500000 -i rtp://0.0.0.0:$RTP_PORT -f alsa -acodec pcm_s16le -ac $CHANNELS -ar $SAMPLE_RATE -bufsize 512k $ALSA_DEVICE"
+    # Fallback to direct RTP with improved reliability
+    FFMPEG_CMD="ffmpeg -y -f rtp -analyzeduration 2000000 -probesize 65536 -fflags +genpts -avoid_negative_ts make_zero -i rtp://0.0.0.0:$RTP_PORT -f alsa -acodec pcm_s16le -ac $CHANNELS -ar $SAMPLE_RATE $ALSA_DEVICE"
 fi
 
 log "Command: $FFMPEG_CMD"

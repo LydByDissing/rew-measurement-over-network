@@ -1,4 +1,9 @@
 #!/bin/bash
+#
+# Clean REW Audio Receiver Installation Script
+# Installs CamillaDSP and RTP/UDP to ALSA bridges
+#
+
 set -e
 
 # Colors
@@ -16,196 +21,101 @@ warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 TARGET_DIR="/home/pi/rew-receiver"
 CURRENT_DIR="$(pwd)"
 
-log "🎵 Installing REW MediaMTX Audio Receiver..."
+log "🎵 Installing REW Audio Receiver..."
 
 # Create target directory
 sudo mkdir -p "$TARGET_DIR"
 sudo chown pi:pi "$TARGET_DIR"
 
-# Stop any existing services first to free up binaries
+# Stop any existing services first
 log "Stopping existing services..."
-sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
+sudo systemctl stop camilladsp 2>/dev/null || true
 sleep 2
 
 # Copy files
 log "Installing binaries and configurations..."
-if ! cp mediamtx camilladsp mediamtx.yml camilladsp.yml camilladsp.yml.template "$TARGET_DIR/" 2>/dev/null; then
-    error "Failed to copy binaries. Trying to force stop services and kill processes..."
-    sudo systemctl stop mediamtx camilladsp 2>/dev/null || true
-    sudo pkill -f mediamtx 2>/dev/null || true
+if ! cp camilladsp camilladsp.yml "$TARGET_DIR/" 2>/dev/null; then
+    error "Failed to copy binaries. Trying to force stop services..."
+    sudo systemctl stop camilladsp 2>/dev/null || true
     sudo pkill -f camilladsp 2>/dev/null || true
     sleep 3
 
     log "Retrying file copy..."
-    cp mediamtx camilladsp mediamtx.yml camilladsp.yml camilladsp.yml.template "$TARGET_DIR/"
+    cp camilladsp camilladsp.yml "$TARGET_DIR/"
 fi
 
-# Copy audio configuration scripts and tools
-log "Installing audio configuration tools..."
-cp configure-audio-device.sh validate-audio-device.sh test-merus-amp.sh "$TARGET_DIR/" 2>/dev/null || true
+# Copy bridge scripts
+log "Installing audio bridge scripts..."
+cp rtp-to-alsa.sh udp-to-alsa.sh "$TARGET_DIR/"
 
-# Copy additional test scripts
-[ -f "test-full-pipeline.sh" ] && cp test-full-pipeline.sh "$TARGET_DIR/" 2>/dev/null || true
-[ -f "test-rtp-stream.sh" ] && cp test-rtp-stream.sh "$TARGET_DIR/" 2>/dev/null || true
-[ -f "test-confirmed-working.sh" ] && cp test-confirmed-working.sh "$TARGET_DIR/" 2>/dev/null || true
+# Copy test and configuration tools
+log "Installing configuration tools..."
+cp test-audio.sh "$TARGET_DIR/" 2>/dev/null || true
+cp validate-audio-device.sh "$TARGET_DIR/" 2>/dev/null || true
+cp test-merus-amp.sh "$TARGET_DIR/" 2>/dev/null || true
 
-# Copy dependency management tools
-[ -f "install-dependencies.sh" ] && cp install-dependencies.sh "$TARGET_DIR/" 2>/dev/null || true
-[ -f "check-dependencies.sh" ] && cp check-dependencies.sh "$TARGET_DIR/" 2>/dev/null || true
-
-# Copy documentation and configuration files
-[ -f "AUDIO-DEVICE-CONFIG.md" ] && cp AUDIO-DEVICE-CONFIG.md "$TARGET_DIR/" 2>/dev/null || true
-[ -f "WORKING-MERUS-CONFIG.md" ] && cp WORKING-MERUS-CONFIG.md "$TARGET_DIR/" 2>/dev/null || true
-[ -f "PIPELINE-VALIDATION-GUIDE.md" ] && cp PIPELINE-VALIDATION-GUIDE.md "$TARGET_DIR/" 2>/dev/null || true
-[ -f "DEPENDENCY-GUIDE.md" ] && cp DEPENDENCY-GUIDE.md "$TARGET_DIR/" 2>/dev/null || true
-[ -f "mediamtx-rtp.yml" ] && cp mediamtx-rtp.yml "$TARGET_DIR/" 2>/dev/null || true
-
-# Set execute permissions for all scripts
-chmod +x "$TARGET_DIR/mediamtx" "$TARGET_DIR/camilladsp" 2>/dev/null || true
-chmod +x "$TARGET_DIR"/*.sh 2>/dev/null || true
-
-# Check dependencies and offer to install them
-log "Checking system dependencies..."
-MISSING_DEPS=0
-CRITICAL_DEPS=("ffmpeg" "aplay" "speaker-test" "curl" "envsubst")
-
-for dep in "${CRITICAL_DEPS[@]}"; do
-    if ! command -v "$dep" >/dev/null 2>&1; then
-        warning "Missing dependency: $dep"
-        ((MISSING_DEPS++))
-    fi
-done
-
-if [ $MISSING_DEPS -gt 0 ]; then
-    warning "⚠️  $MISSING_DEPS critical dependencies are missing"
-    echo ""
-    log "Dependencies are needed for:"
-    log "• ffmpeg: RTP stream testing and media processing"
-    log "• aplay/speaker-test: Audio device testing"
-    log "• curl: API endpoint testing"
-    log "• envsubst: Configuration template processing"
-    echo ""
-    
-    # Check if we can install automatically
-    if [ -f "$TARGET_DIR/install-dependencies.sh" ]; then
-        read -p "Install missing dependencies automatically? [y/N]: " -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            log "Installing dependencies..."
-            if cd "$TARGET_DIR" && ./install-dependencies.sh; then
-                success "✅ Dependencies installed successfully"
-            else
-                warning "⚠️  Dependency installation had issues. You can run './install-dependencies.sh' later."
-            fi
-            cd "$CURRENT_DIR"
-        else
-            log "You can install dependencies later with: cd $TARGET_DIR && ./install-dependencies.sh"
-        fi
-    else
-        log "Install dependencies manually: sudo apt-get update && sudo apt-get install ffmpeg alsa-utils curl gettext-base"
-    fi
-else
-    success "✅ All critical dependencies are available"
-fi
+# Set permissions
+log "Setting permissions..."
+chmod +x "$TARGET_DIR/camilladsp" "$TARGET_DIR"/*.sh 2>/dev/null || true
 
 # Install systemd services
 log "Installing systemd services..."
-sudo cp mediamtx.service camilladsp.service /etc/systemd/system/
-sudo systemctl daemon-reload
-
-# Setup ALSA loopback
-log "Configuring ALSA loopback device..."
-sudo modprobe snd-aloop || true
-echo "snd-aloop" | sudo tee -a /etc/modules-load.d/modules.conf > /dev/null || true
+sudo cp camilladsp.service /etc/systemd/system/
+sudo cp udp-bridge.service /etc/systemd/system/ 2>/dev/null || true
+sudo cp rtp-bridge.service /etc/systemd/system/ 2>/dev/null || true
 
 # Create log directories
-sudo mkdir -p /var/log/mediamtx
-sudo chown pi:pi /var/log/mediamtx
+log "Creating log directories..."
+sudo mkdir -p /var/log/camilladsp
+sudo chown pi:pi /var/log/camilladsp
 
-# Check ALSA device configuration and select appropriate config
-log "Checking ALSA device configuration..."
+# Reload systemd and enable services
+log "Configuring services..."
+sudo systemctl daemon-reload
 
-# Check if loopback device is available
-if grep -q "Loopback" /proc/asound/cards 2>/dev/null; then
-    success "ALSA Loopback device detected"
+# Enable and start CamillaDSP
+log "Starting CamillaDSP service..."
+sudo systemctl enable camilladsp
+sudo systemctl start camilladsp
 
-    # Check if any processes are using audio devices
-    if pgrep -f "pulseaudio\|jackd" >/dev/null 2>&1; then
-        warning "Audio processes detected, stopping them..."
-        sudo pkill pulseaudio 2>/dev/null || true
-        sudo pkill jackd 2>/dev/null || true
-        sleep 1
-    fi
+# Check service status
+CAMILLADSP_ACTIVE=$(systemctl is-active --quiet camilladsp && echo "true" || echo "false")
+
+if [ "$CAMILLADSP_ACTIVE" = "true" ]; then
+    success "🎉 REW Audio Receiver installed successfully!"
+    log ""
+    log "Core Components:"
+    log "• CamillaDSP: Running for audio processing"
+    log "• RTP Bridge: $TARGET_DIR/rtp-to-alsa.sh"  
+    log "• UDP Bridge: $TARGET_DIR/udp-to-alsa.sh"
+    log ""
+    log "Status:"
+    sudo systemctl status camilladsp --no-pager -l
+    log ""
+    log "API Access:"
+    log "• CamillaDSP API: http://$(hostname -I | awk '{print $1}'):1234"
+    log ""
+    log "Audio Streaming:"
+    log "• Use bridge scripts to receive RTP/UDP audio streams"
+    log "• Configure in CamillaDSP for processing and output"
+    log ""
+    log "Management Commands:"
+    log "• View CamillaDSP logs: sudo journalctl -u camilladsp -f"
+    log "• Restart CamillaDSP: sudo systemctl restart camilladsp"
+    log "• Stop CamillaDSP: sudo systemctl stop camilladsp"
+    log ""
+    log "Audio Bridge Usage:"
+    log "• RTP Bridge: $TARGET_DIR/rtp-to-alsa.sh --port 8000"
+    log "• UDP Bridge: $TARGET_DIR/udp-to-alsa.sh --port 8000"
+    log ""
+    log "Bridge Services (optional - alternative to manual scripts):"
+    log "• Start UDP bridge service: sudo systemctl start udp-bridge"
+    log "• Start RTP bridge service: sudo systemctl start rtp-bridge"
+    log "• Enable on boot: sudo systemctl enable udp-bridge rtp-bridge"
+    log "• Check status: sudo systemctl status udp-bridge rtp-bridge"
+    log "• View logs: sudo journalctl -u udp-bridge -u rtp-bridge -f"
 else
-    warning "ALSA Loopback device not found, using fallback configuration"
-    if [ -f "$TARGET_DIR/camilladsp-fallback.yml" ]; then
-        log "Switching to fallback configuration..."
-        cp "$TARGET_DIR/camilladsp-fallback.yml" "$TARGET_DIR/camilladsp.yml"
-    fi
-fi
-
-# Enable and start services
-log "Starting services..."
-sudo systemctl enable mediamtx
-sudo systemctl start mediamtx
-sleep 3
-
-# Disable CamillaDSP temporarily due to ALSA enumeration issues
-warning "Disabling CamillaDSP due to persistent ALSA enumeration issues"
-warning "CamillaDSP service will be installed but not started automatically"
-warning "MediaMTX will handle audio streaming without DSP processing for now"
-
-# Install but don't enable CamillaDSP service
-sudo systemctl disable camilladsp 2>/dev/null || true
-sudo systemctl stop camilladsp 2>/dev/null || true
-
-log "CamillaDSP is available but disabled. To troubleshoot later:"
-log "• Check ALSA devices: cat /proc/asound/cards"
-log "• Try manual start: sudo systemctl start camilladsp"
-log "• View logs: sudo journalctl -u camilladsp -f"
-
-# Check final status
-MEDIAMTX_ACTIVE=$(systemctl is-active --quiet mediamtx && echo "true" || echo "false")
-CAMILLADSP_ENABLED=$(systemctl is-enabled camilladsp 2>/dev/null | grep -q "enabled" && echo "true" || echo "false")
-
-if [ "$MEDIAMTX_ACTIVE" = "true" ]; then
-    success "🎉 REW MediaMTX Audio Receiver installed successfully!"
-    warning "⚠️ CamillaDSP is installed but disabled due to ALSA issues"
-    warning "Audio streaming works via MediaMTX without DSP processing"
-
-    echo
-    echo "📊 Service Status:"
-    sudo systemctl status mediamtx --no-pager -l
-
-    echo
-    echo "🔗 Access Points:"
-    echo "• MediaMTX API: http://$(hostname -I | awk '{print $1}'):9997"
-    echo "• RTSP Stream: rtsp://$(hostname -I | awk '{print $1}'):8554/stream-name"
-    echo "• Publish to: MediaMTX via RTSP/RTMP/WebRTC"
-    echo
-    echo "🔧 Commands:"
-    echo "• View MediaMTX logs: sudo journalctl -u mediamtx -f"
-    echo "• Restart MediaMTX: sudo systemctl restart mediamtx"
-    echo "• Stop MediaMTX: sudo systemctl stop mediamtx"
-    echo
-    warning "🔧 Dependencies (if needed):"
-    warning "• Check what's missing: cd $TARGET_DIR && ./check-dependencies.sh"
-    warning "• Install missing packages: cd $TARGET_DIR && ./install-dependencies.sh"
-    echo
-    warning "🔧 Audio Device Configuration:"
-    warning "• Configure for Merus amp: cd $TARGET_DIR && ./test-merus-amp.sh"
-    warning "• Test full pipeline: cd $TARGET_DIR && ./test-full-pipeline.sh"
-    warning "• Test RTP streaming: cd $TARGET_DIR && ./test-rtp-stream.sh"
-    warning "• Configure custom device: cd $TARGET_DIR && ./configure-audio-device.sh -d DEVICE_NAME"
-    warning "• Validate audio: cd $TARGET_DIR && ./validate-audio-device.sh -d DEVICE_NAME"
-    warning "• Read guides: cat $TARGET_DIR/AUDIO-DEVICE-CONFIG.md"
-    echo
-    warning "🔧 CamillaDSP Troubleshooting (when ready):"
-    warning "• Check ALSA devices: cat /proc/asound/cards"
-    warning "• Check CamillaDSP logs: sudo journalctl -u camilladsp -f"
-    warning "• Try manual start: sudo systemctl start camilladsp"
-    warning "• Check config: cat $TARGET_DIR/camilladsp.yml"
-else
-    error "❌ MediaMTX installation failed"
-    echo "Check logs: sudo journalctl -u mediamtx"
+    error "❌ CamillaDSP installation failed"
+    echo "Check logs: sudo journalctl -u camilladsp"
     exit 1
 fi

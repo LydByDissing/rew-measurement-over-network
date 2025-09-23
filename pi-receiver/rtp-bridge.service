@@ -1,0 +1,27 @@
+[Unit]
+Description=RTP to ALSA Audio Bridge for REW
+After=sound.target camilladsp.service
+Requires=camilladsp.service
+PartOf=camilladsp.service
+
+[Service]
+Type=exec
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/rew-receiver
+ExecStart=/home/pi/rew-receiver/rtp-to-alsa.sh
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=3
+StartLimitIntervalSec=60
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment="RTP_PORT=5004"
+Environment="ALSA_DEVICE=plughw:CARD=Loopback,DEV=0"
+Environment="SAMPLE_RATE=48000"
+Environment="CHANNELS=2"
+
+[Install]
+WantedBy=multi-user.target

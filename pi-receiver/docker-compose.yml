@@ -1,25 +1,23 @@
-# Docker Compose for REW MediaMTX Audio Receiver
+# Docker Compose for REW Audio Receiver with CamillaDSP
 # Works on both x86_64 (testing) and ARM (Pi deployment)
 
 services:
-  rew-mediamtx-receiver:
+  rew-audio-receiver:
     build:
       context: .
       dockerfile: Dockerfile
       platforms:
         - linux/amd64
         - linux/arm/v6
-    image: rew-mediamtx-receiver:latest
-    container_name: rew-mediamtx-audio-receiver
+    image: rew-audio-receiver:latest
+    container_name: rew-audio-receiver
     hostname: ${PI_HOSTNAME:-rew-pi}
     
-    # Port mapping for MediaMTX services
+    # Port mapping for audio receiver services
     ports:
-      - "9997:9997"   # MediaMTX API
-      - "8554:8554"   # RTSP
-      - "5004:5004/udp" # RTP input
-      - "1234:1234"   # CamillaDSP API 
-      - "8000:8000/udp" # RTP server
+      - "1234:1234"     # CamillaDSP API
+      - "8000:8000/udp" # Default audio bridge port
+      - "5004:5004/udp" # RTP input port
     
     # Restart policy
     restart: unless-stopped
@@ -32,7 +30,7 @@ services:
       - /var/lib/alsa:/var/lib/alsa:ro
       - /usr/share/alsa:/usr/share/alsa:ro
       # PulseAudio cookie for authentication
-      - ${HOME}/.config/pulse/cookie:/home/pi/.config/pulse/cookie:ro
+      - ${HOME}/.config/pulse/cookie:/home/rew/.config/pulse/cookie:ro
       # Shared memory for better audio performance
       - /dev/shm:/dev/shm
       
@@ -76,4 +74,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
