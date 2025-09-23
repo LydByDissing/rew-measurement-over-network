@@ -1,8 +1,8 @@
 [Unit]
 Description=CamillaDSP Audio Processor
 Documentation=https://github.com/HEnquist/camilladsp
-After=network.target mediamtx.service
-Wants=mediamtx.service
+After=network.target sound.target
+Wants=sound.target
 
 [Service]
 Type=simple

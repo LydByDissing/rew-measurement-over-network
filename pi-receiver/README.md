@@ -1,364 +1,219 @@
-# REW Pi Audio Receiver - Docker Deployment
+# REW Audio Receiver
+
+A simplified audio receiver system for REW measurements using CamillaDSP and RTP/UDP to ALSA bridges.
 
 ## Overview
 
-The REW Pi Audio Receiver Docker container eliminates compilation issues and provides an easy deployment method for Raspberry Pi devices. This containerized solution works both locally (x86) for testing and on Raspberry Pi hardware (ARM) for production.
+This system provides audio processing capabilities using CamillaDSP with RTP and UDP bridges that receive audio streams and forward them to ALSA devices. It's designed to work with REW (Room EQ Wizard) for acoustic measurements.
+
+## Architecture
+
+```
+RTP/UDP Audio Stream → Bridge Script → ALSA Loopback → CamillaDSP → Audio Output Device
+```
+
+## Components
+
+### Core Components
+- **CamillaDSP**: High-quality audio DSP processing
+- **RTP Bridge**: Receives RTP audio streams (`rtp-to-alsa.sh`)
+- **UDP Bridge**: Receives UDP audio streams (`udp-to-alsa.sh`)
+- **ALSA Loopback**: Virtual audio device for inter-process audio routing
+
+### Configuration Files
+- `camilladsp.yml`: CamillaDSP configuration
+- `camilladsp.service`: Systemd service for CamillaDSP
+- `udp-bridge.service`: Systemd service for UDP bridge
 
 ## Quick Start
 
-### For Raspberry Pi Deployment (Recommended)
+### 1. Installation
 
-**Single command deployment using Docker image:**
 ```bash
 cd pi-receiver
-./deploy-to-pi.sh deploy-remote pi@your-pi-ip
+sudo ./install.sh
 ```
 
 This will:
-1. Build the ARM Docker image locally
-2. Export it as a tarball
-3. Transfer the tarball to your Pi
-4. Install and start the container automatically
+- Install CamillaDSP binary and configuration
+- Install RTP and UDP bridge scripts
+- Set up systemd services
+- Configure ALSA loopback device
 
-### For Local Testing (x86)
+### 2. Start Audio Bridges
 
+**RTP Bridge (for RTP audio streams):**
 ```bash
-cd pi-receiver
-./deploy-to-pi.sh build
-./deploy-to-pi.sh deploy
+# Default port 8000
+/home/pi/rew-receiver/rtp-to-alsa.sh
+
+# Custom port
+/home/pi/rew-receiver/rtp-to-alsa.sh --port 5004
 ```
 
-## Container Features
+**UDP Bridge (for UDP audio streams):**
+```bash
+# Default port 8000
+/home/pi/rew-receiver/udp-to-alsa.sh
 
-### ✅ **Solved Problems:**
-- **No more compilation issues** - All dependencies pre-built in container
-- **Easy deployment** - Single command deployment to Pi
-- **Consistent environment** - Same container works locally and on Pi
-- **Auto-recovery** - Container restarts on failure
-- **Health monitoring** - Built-in health checks and status API
+# Custom port
+/home/pi/rew-receiver/udp-to-alsa.sh --port 8001
+```
 
-### 🎵 **Audio Capabilities:**
-- **ALSA audio output** with configurable devices
-- **PulseAudio support** via socket mounting
-- **Null device support** for testing
-- **48kHz, 16-bit stereo** audio streaming
+### 3. Check Status
 
-### 📡 **Network Features:**
-- **RTP audio streaming** on port 5004 (configurable)
-- **HTTP status API** on port 8080 (configurable) 
-- **mDNS service discovery** for automatic detection
-- **Connection quality monitoring**
+```bash
+# Check CamillaDSP service
+sudo systemctl status camilladsp
+
+# View logs
+sudo journalctl -u camilladsp -f
+
+# Test CamillaDSP API
+curl http://localhost:1234/api/config
+```
 
 ## Configuration
 
-### Environment File (.env)
+### Audio Device Configuration
 
-Copy `.env.example` to `.env` and customize:
-
-```bash
-# Pi identification
-PI_HOSTNAME=rew-pi-kitchen
-VERSION=latest
-
-# Audio configuration  
-AUDIO_DEVICE=hw:0,0          # Use specific hardware device
-# AUDIO_DEVICE=pulse         # Use PulseAudio
-# AUDIO_DEVICE=default       # Use system default
-
-# Network ports
-RTP_PORT=5004                # RTP audio streaming port
-HTTP_PORT=8080               # HTTP status/API port
-
-# Logging
-LOG_LEVEL=INFO               # DEBUG, INFO, WARNING, ERROR
-
-# Container resource limits (adjust for Pi model)
-# Pi Zero/1: memory: 128M, cpus: '0.5'
-# Pi 2/3:    memory: 256M, cpus: '1.0' 
-# Pi 4/5:    memory: 512M, cpus: '2.0'
-```
-
-## Deployment Script Usage
-
-The `deploy-to-pi.sh` script provides comprehensive container management:
-
-### Build Commands
-```bash
-./deploy-to-pi.sh build      # Build x86 image for local testing
-./deploy-to-pi.sh build-pi   # Build ARM image for Raspberry Pi  
-```
-
-### Deployment Commands
-```bash
-./deploy-to-pi.sh deploy                    # Deploy locally
-./deploy-to-pi.sh deploy-remote pi@ip       # Deploy Docker image to remote Pi
-./deploy-to-pi.sh export                    # Export Docker image for manual transfer
-```
-
-### Management Commands  
-```bash
-./deploy-to-pi.sh start      # Start container
-./deploy-to-pi.sh stop       # Stop container
-./deploy-to-pi.sh status     # Show container status
-./deploy-to-pi.sh logs       # Show container logs
-./deploy-to-pi.sh clean      # Remove container and images
-```
-
-## Docker Compose Setup
-
-### Basic docker-compose.yaml
-The container uses host networking for optimal audio and mDNS performance:
+Edit `/home/pi/rew-receiver/camilladsp.yml` to configure your audio output device:
 
 ```yaml
-services:
-  rew-pi-receiver:
-    image: rew-pi-receiver:latest
-    container_name: rew-pi-audio-receiver
-    network_mode: host
-    restart: unless-stopped
-    
-    environment:
-      - AUDIO_DEVICE=default
-      - RTP_PORT=5004
-      - HTTP_PORT=8080
-      - LOG_LEVEL=INFO
-    
-    volumes:
-      - /dev/snd:/dev/snd               # Audio device access
-      - /run/pulse:/run/pulse:ro        # PulseAudio socket
-      - ./logs:/var/log/rew             # Log persistence
-    
-    devices:
-      - /dev/snd                        # Audio device access
-    
-    cap_add:
-      - DAC_OVERRIDE                    # Audio permissions
+devices:
+  capture:
+    type: Alsa
+    channels: 2
+    device: "plughw:CARD=Loopback,DEV=1"  # Input from bridge
+    format: S16LE
+  playback:
+    type: Alsa
+    channels: 2
+    device: "hw:CARD=sndrpimerusamp"  # Your audio output device
+    format: S32LE
 ```
 
-### With System Monitoring
-Enable the monitoring profile:
+### ALSA Loopback Setup
+
+Ensure ALSA loopback module is loaded:
+```bash
+sudo modprobe snd-aloop
+echo 'snd-aloop' | sudo tee -a /etc/modules
+```
+
+## Usage
+
+### Basic Workflow
+
+1. **Start CamillaDSP** (should start automatically via systemd)
+2. **Start appropriate bridge script** (RTP or UDP)
+3. **Send audio to the bridge port** from your audio source
+4. **Audio flows through the pipeline**: Bridge → ALSA Loopback → CamillaDSP → Audio Output
+
+### REW Integration
+
+For REW measurements:
+1. Configure REW to send RTP audio to your Pi's IP on port 8000
+2. Start the RTP bridge: `/home/pi/rew-receiver/rtp-to-alsa.sh --port 8000`
+3. CamillaDSP will process and output the audio to your configured device
+
+## API Access
+
+- **CamillaDSP API**: `http://pi-ip:1234`
+  - Configuration: `/api/config`
+  - Status: `/api/status`
+
+## Management Commands
 
 ```bash
-COMPOSE_PROFILES=monitoring docker-compose up -d
+# Service management
+sudo systemctl start camilladsp
+sudo systemctl stop camilladsp
+sudo systemctl restart camilladsp
+
+# View logs
+sudo journalctl -u camilladsp -f
+
+# Test audio device
+aplay -l
+speaker-test -c 2 -r 48000 -D hw:CARD=sndrpimerusamp
 ```
 
-This adds a Prometheus node exporter on port 9100 for system metrics.
+## Testing
 
-## Container Architecture
+### Test Audio Pipeline
+```bash
+# Test ALSA loopback
+aplay -D plughw:CARD=Loopback,DEV=0 /usr/share/sounds/alsa/Front_Left.wav
 
-### Multi-Architecture Support
-- **linux/amd64** - Local development and testing
-- **linux/arm/v6** - Raspberry Pi Zero, Pi 1
-- **linux/arm/v7** - Raspberry Pi 2, Pi 3
-- **linux/arm64** - Raspberry Pi 4, Pi 5 (64-bit OS)
+# Test CamillaDSP
+curl http://localhost:1234/api/config
 
-### Container Contents
-- **Python 3.12** runtime environment
-- **ALSA** and **PulseAudio** audio libraries
-- **Avahi** for mDNS service discovery
-- **Audio dependencies** (portaudio, pyalsaaudio, etc.)
-- **Enhanced entrypoint** with initialization and monitoring
-
-## Status API Endpoints
-
-The container exposes HTTP endpoints for monitoring:
-
-### GET /status
-```json
-{
-  "service": "REW Audio Receiver",
-  "version": "1.0.0", 
-  "status": "running",
-  "audio": {
-    "device": "hw:0,0",
-    "port": 5004,
-    "running": true
-  },
-  "stats": {
-    "packets_received": 1250,
-    "bytes_received": 2560000,
-    "errors": 0,
-    "connection_errors": 0,
-    "connection_status": "GOOD"
-  }
-}
+# Test bridge scripts
+./rtp-to-alsa.sh --help
+./udp-to-alsa.sh --help
 ```
 
-### GET /health
-```json
-{
-  "status": "healthy",
-  "timestamp": 1693789234
-}
+## Deployment
+
+### Remote Pi Deployment
+```bash
+./deploy-to-pi.sh deploy pi@your-pi-ip
 ```
 
-## Integration with Java Audio Bridge
-
-### Network Discovery
-The Pi receiver advertises itself via mDNS as:
-- **Service Name**: `REW-Pi-{hostname}._rew-audio._tcp.local.`  
-- **Port**: 5004 (or configured RTP_PORT)
-- **HTTP API**: Port 8080 (or configured HTTP_PORT)
-
-### Audio Flow
-1. **Desktop side**: Java Audio Bridge captures from REW via PulseAudio loopback
-2. **Network**: RTP stream sent to Pi receiver on port 5004
-3. **Pi side**: Container receives RTP packets and outputs to ALSA audio device
+### Local Installation
+```bash
+./deploy-to-pi.sh install
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### 1. Audio Device Access
+1. **No audio output**: Check audio device configuration in `camilladsp.yml`
+2. **Bridge not receiving**: Verify network connectivity and port availability
+3. **ALSA errors**: Ensure loopback module is loaded (`lsmod | grep snd_aloop`)
+4. **Service issues**: Check logs with `journalctl -u camilladsp -f`
+
+### Debug Commands
 ```bash
-# Check available audio devices
-docker exec rew-pi-audio-receiver aplay -l
+# Check audio devices
+aplay -l
 
-# Test with null device first
-docker-compose run --rm rew-pi-receiver --device null --verbose
+# Check ALSA loopback
+cat /proc/asound/cards
+
+# Test network ports
+netstat -an | grep :8000
+
+# Check processes
+pgrep -f camilladsp
+pgrep -f rtp-to-alsa
 ```
 
-#### 2. PulseAudio Connection
-```bash
-# Mount PulseAudio socket correctly
-ls -la /run/pulse/native  # Should exist
+## Files Structure
 
-# Or use ALSA directly
-AUDIO_DEVICE=hw:0,0 docker-compose up
+```
+pi-receiver/
+├── camilladsp                    # CamillaDSP binary
+├── camilladsp.yml               # CamillaDSP configuration
+├── camilladsp.service          # Systemd service
+├── rtp-to-alsa.sh             # RTP bridge script
+├── udp-to-alsa.sh             # UDP bridge script
+├── udp-bridge.service         # UDP bridge systemd service
+├── deploy-to-pi.sh            # Deployment script
+├── install.sh                 # Installation script
+├── start.sh                   # Manual start script
+└── test-audio.sh              # Audio testing utility
 ```
 
-#### 3. Network Connectivity
-```bash
-# Test RTP port access
-nc -u pi-ip 5004
+## Requirements
 
-# Check status API
-curl http://pi-ip:8080/status
-```
+- Raspberry Pi (or compatible ARM device)
+- ALSA audio system
+- FFmpeg (for bridge scripts)
+- Network connectivity for audio streaming
 
-#### 4. Container Logs
-```bash
-# View real-time logs
-./deploy-to-pi.sh logs
+## License
 
-# Or with docker-compose
-docker-compose logs -f
-```
-
-### Performance Tuning
-
-#### For Pi Zero/1 (limited resources):
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 128M
-      cpus: '0.5'
-environment:
-  - LOG_LEVEL=WARNING  # Reduce logging overhead
-```
-
-#### For Pi 4/5 (more resources):
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 512M
-      cpus: '2.0'  
-environment:
-  - LOG_LEVEL=DEBUG    # Detailed logging available
-```
-
-## Development Workflow
-
-### 1. Local Development
-```bash
-# Test container locally first
-./deploy-to-pi.sh build
-./deploy-to-pi.sh deploy
-
-# Verify functionality  
-curl http://localhost:8080/status
-```
-
-### 2. Pi Testing
-```bash
-# Deploy Docker image directly to Pi (builds ARM version automatically)
-./deploy-to-pi.sh deploy-remote pi@192.168.1.100
-```
-
-### 3. Integration Testing
-```bash
-# Use existing Docker Compose test environment
-cd ../
-./test-docker-setup.sh
-```
-
-This runs the full Java Bridge + Pi receiver integration test with containers.
-
-## Docker Image Deployment Process
-
-The deployment script uses a **Docker image tarball method** for reliable Pi deployment:
-
-### How it Works
-1. **Build ARM image** locally (cross-compilation)
-2. **Export as tarball** - `docker save` creates a portable image file
-3. **Transfer to Pi** - SCP the tarball + installation scripts
-4. **Load & Start** - Pi loads the image and starts the container
-
-### Benefits
-- ✅ **No compilation on Pi** - Image built on powerful development machine
-- ✅ **Consistent deployments** - Same image works across different Pi models
-- ✅ **Offline capable** - Once transferred, no internet needed on Pi
-- ✅ **Version control** - Easy rollback with dated image tags
-- ✅ **Fast updates** - Only transfer image differences
-
-### Manual Export (Advanced)
-For air-gapped or multiple Pi deployments:
-
-```bash
-# Export deployment package
-./deploy-to-pi.sh export
-
-# Copy to USB/network storage
-cp -r export/ /media/usb/rew-deployment/
-
-# Install on each Pi
-scp -r /media/usb/rew-deployment/ pi@pi-ip:~/
-ssh pi@pi-ip "cd ~/rew-deployment && ./install-from-tarball.sh"
-```
-
-## Production Deployment
-
-### Systemd Integration (Optional)
-The container includes systemd service generation:
-
-```bash
-# Generate systemd service
-docker run --rm rew-pi-receiver:latest --generate-systemd > /etc/systemd/system/rew-pi-receiver.service
-
-# Enable and start
-sudo systemctl enable rew-pi-receiver.service
-sudo systemctl start rew-pi-receiver.service
-```
-
-### Auto-Updates
-Set up automatic container updates:
-
-```bash
-# Add to crontab
-0 2 * * * cd /home/pi/rew-receiver && ./deploy-to-pi.sh build-pi && docker-compose up -d
-```
-
-## Success Metrics
-
-With this Docker solution, you now have:
-
-- ✅ **Zero compilation** on Pi devices
-- ✅ **One-command deployment** via `deploy-to-pi.sh`
-- ✅ **Consistent testing** environment (local x86 + Pi ARM)  
-- ✅ **Automatic recovery** and health monitoring
-- ✅ **Easy configuration** via environment variables
-- ✅ **Production ready** with resource limits and logging
-
-The Pi receiver is now ready for easy distribution and deployment! 🎉
+This project is part of the REW measurement system and follows the same licensing terms.

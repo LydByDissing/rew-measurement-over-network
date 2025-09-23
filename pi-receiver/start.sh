@@ -1,59 +1,69 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
-echo "🎵 Starting REW MediaMTX Audio Receiver..."
+echo "🎵 Starting REW Audio Receiver..."
 
 # Configure audio device (default to hw:0,0 if not specified)
 export AUDIO_DEVICE="${AUDIO_DEVICE:-hw:0,0}"
-echo "🔧 Configuring audio device: $AUDIO_DEVICE"
+echo "🔧 Audio device: $AUDIO_DEVICE"
 
-# Generate CamillaDSP configuration from template if template exists
-if [ -f "/app/config/camilladsp.yml.template" ]; then
-    echo "🎚️  Generating CamillaDSP configuration for audio device: $AUDIO_DEVICE"
-    envsubst < /app/config/camilladsp.yml.template > /app/config/camilladsp.yml
+# Check if we're running in Docker
+if [ -f /.dockerenv ]; then
+    echo "🐳 Running in Docker container"
+    # Use full paths in Docker
+    CAMILLADSP_BIN="camilladsp"
+    CONFIG_DIR="/app/config"
 else
-    echo "⚠️  No CamillaDSP template found, using default configuration"
+    echo "🏠 Running natively"
+    # Use local paths for native execution
+    CAMILLADSP_BIN="./camilladsp"
+    CONFIG_DIR="."
 fi
 
-# Start MediaMTX in background
-echo "📡 Starting MediaMTX..."
-mediamtx /app/config/mediamtx.yml &
-MEDIAMTX_PID=$!
+# Generate CamillaDSP configuration from template if template exists
+TEMPLATE_FILE="$CONFIG_DIR/camilladsp.yml.template"
+CONFIG_FILE="$CONFIG_DIR/camilladsp.yml"
 
-# Give MediaMTX time to start
-sleep 3
+if [ -f "$TEMPLATE_FILE" ]; then
+    echo "🎚️  Generating CamillaDSP configuration for audio device: $AUDIO_DEVICE"
+    envsubst < "$TEMPLATE_FILE" > "$CONFIG_FILE"
+elif [ ! -f "$CONFIG_FILE" ]; then
+    echo "⚠️  No CamillaDSP configuration found"
+    exit 1
+fi
 
-# Start CamillaDSP (optional - may fail on some platforms)
+# Start CamillaDSP
 echo "🎚️  Starting CamillaDSP..."
-camilladsp -p 1234 /app/config/camilladsp.yml &
+$CAMILLADSP_BIN -p 1234 "$CONFIG_FILE" &
 CAMILLADSP_PID=$!
-# Give it a moment to potentially crash
-sleep 1
+
+# Give it a moment to start
+sleep 2
 if kill -0 $CAMILLADSP_PID 2>/dev/null; then
     echo "✅ CamillaDSP started successfully"
 else
-    echo "⚠️  CamillaDSP failed to start (continuing without audio processing)"
-    CAMILLADSP_PID=""
+    echo "❌ CamillaDSP failed to start"
+    exit 1
 fi
 
-echo "✅ MediaMTX started successfully!"
+echo "✅ REW Audio Receiver ready!"
 echo "📊 Access Points:"
-echo "   • MediaMTX API: http://localhost:9997"  
 echo "   • CamillaDSP API: http://localhost:1234"
-echo "   • RTSP Stream: rtsp://localhost:8554/"
-echo "   • RTP Input: Send to port 5004"
+echo ""
+echo "🎯 Audio Bridges:"
+echo "   • Start RTP bridge: ./rtp-to-alsa.sh --port 8000"
+echo "   • Start UDP bridge: ./udp-to-alsa.sh --port 8000"
 
 # Function to handle shutdown
 shutdown() {
-    echo "🛑 Shutting down services..."
-    kill $MEDIAMTX_PID 2>/dev/null || true
-    [ -n "$CAMILLADSP_PID" ] && kill $CAMILLADSP_PID 2>/dev/null || true
-    wait
+    echo "🛑 Shutting down CamillaDSP..."
+    kill $CAMILLADSP_PID 2>/dev/null || true
+    wait $CAMILLADSP_PID 2>/dev/null || true
     exit 0
 }
 
 # Handle signals
 trap shutdown TERM INT
 
-# Wait for both services (MediaMTX is primary)
-wait $MEDIAMTX_PID
+# Wait for CamillaDSP
+wait $CAMILLADSP_PID
